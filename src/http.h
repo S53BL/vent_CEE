@@ -1,0 +1,16 @@
+#ifndef HTTP_H
+#define HTTP_H
+
+#include <Arduino.h>
+
+// HTTP client functions for sending messages
+bool sendStatusUpdate();
+bool sendDewUpdate(const char* room);
+bool sendLogsToREW();
+void checkAndSendStatusUpdate();
+
+// Helper functions
+bool sendHttpPost(const char* url, const String& jsonData, int timeoutMs = 5000);
+bool sendHttpPostWithRetry(const char* url, const String& jsonData, int maxRetries = 3);
+
+#endif // HTTP_H

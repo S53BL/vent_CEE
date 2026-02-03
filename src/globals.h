@@ -1,0 +1,38 @@
+// globals.h
+
+#ifndef GLOBALS_H
+#define GLOBALS_H
+
+#include <Arduino.h>
+#include <Adafruit_BME280.h>
+#include <Adafruit_SHT4x.h>
+#include <ezTime.h>
+#include "config.h"
+
+extern ExternalData externalData;
+extern Settings settings;
+extern CurrentData currentData;
+
+void loadSettings();
+void saveSettings();
+uint16_t calculateCRC(const uint8_t* data, size_t len);
+void initDefaults();
+bool isIdle(void);
+
+extern Adafruit_BME280 *bme280;
+extern Adafruit_SHT4x *sht41;
+extern bool bmePresent;
+extern bool sht41Present;
+extern unsigned long lastSensorRead;
+
+// Logging globals
+extern String logBuffer;
+extern bool loggingInitialized;
+extern unsigned long lastLogFlush;
+
+// Time management globals
+extern Timezone myTZ;
+extern bool timeSynced;
+extern const char* ntpServers[];
+
+#endif // GLOBALS_H

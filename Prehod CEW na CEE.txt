@@ -1,0 +1,55 @@
+### Prehod iz vent_CEW (WiFi) na vent_CEE (Ethernet)
+
+**Novo:**
+- Ethernet komunikacija (W5500 PHY namesto WiFi; statični IP 192.168.2.192, uporaba Ethernet.h z MAC v config.h).
+- Integracija DEW enot (DEW_UT 192.168.2.193, DEW_KOP 192.168.2.194; dodaj sendToDEW_UT/KOP v http.cpp za event-driven JSON POST z countdown/temp/humidity/fan/error).
+- Remap pinov po Waveshare pinoutu (npr. outputs GPIO42-35, I2C GPIO48/47, inputs GPIO34/33 + leva stran za ostalo; brez strapping/JTAG pinov).
+- Novo repo vent_CEE (fork iz vent_CEW, brez WiFi delov).
+
+**Ukinjeno:**
+- WiFi (odstrani WiFi.begin/connect/status iz main.cpp, wifi_config.h).
+- LED signalizacija (odstrani led.cpp/h, PIN_UTILITY_LED/PIN_KOPALNICA_RGB iz config.h, updateLEDs() iz main/vent.cpp, LED states iz globals).
+- Lokalno shranjevanje zgodovine/logov (brez LittleFS za history.csv; logi samo v buffer, pošiljanje na REW).
+- RS485/SD ostanki (že ukinjeni v CEW, potrdi odstranitev vseh referenc).
+- Mrtvi deli (npr. calculateCRC, WDT defines, ssrPins/inputPins, duplicirani handlerji iz http.h).
+
+**Definirane funkcionalnosti (po CEW strukturi, prilagojene za CEE):**
+- Inicializacija: I2C, senzorji (SHT41/BME280), ventilatorji (SSR outputs), vhodi (digital inputs), nastavitve (NVS/EEPROM), Ethernet, NTP/ezTime, logging, web server, HTTP.
+- Senzorji: Periodično branje/retry/reset I2C (sens.cpp), errorFlags.
+- Ventilatorji: Control po sobah (bathroom/utility/WC/living na pragove/triggerje/DND/NND), power/duty cycle izračuni (vent.cpp).
+- Vhodi: Branje gumbov/stikal/oken/luči vsak 500 ms (main.cpp).
+- HTTP: Inbound (sensor-data/manual-control), outbound (status-update/heartbeat/logs na REW/DEW z retry/backoff).
+- Logging: logEvent/buffer/flush na REW (logging.cpp).
+- Web: Settings form/root/data/reset (web.cpp).
+- Čas: NTP update/increment/formatted time (time_manager.cpp).
+- Sistem: Time range checks (system.cpp).
+
+**Optimizacija in pragmatičen pristop:**
+- Generiraj iz nič: Začni z empty src/, kopiraj selektivno iz CEW (sens/vent/logging/time_manager/system za core logiko), iz REW (http/web za robusten JSON/AsyncWebServer).
+- Optimiziraj: Združi duplicirane funkcije (npr. logEvent v eno, readInputs brez duplikatov), odstrani mrtvo (kot zgoraj), razbij main.loop v subfunkcije (npr. handleSensors/Inputs/Vents/HTTP). Uporabi conditional compile (#ifdef ETH_ENABLED za Ethernet specifično).
+- Pragmatično: Korak-po-korak (1. Ethernet init/test, 2. pin remap, 3. ukinitev LED, 4. DEW integracija), testiraj v PlatformIO, kopiraj samo delujoče (npr. retry logika iz http.cpp, pragovi iz config.h). 
+
+Stran	Pin št.	Oznaka/GPIO	Funkcija	Povezava
+Desna	9	GPIO42	Kopalnica odvod	SSR modul → 220V Ventilatorji (Pin 1)
+Desna	10	GPIO41	Utility odvod	SSR modul → 220V Ventilatorji (Pin 2)
+Desna	11	GPIO40	WC odvod	SSR modul → 220V Ventilatorji (Pin 3)
+Desna	12	GPIO39	Skupni vpih	SSR modul → 220V Ventilatorji (Pin 4)
+Desna	14	GPIO38	Dnevni prostor vpih	SSR modul → 220V Ventilatorji (Pin 5)
+Desna	15	GPIO37	Dnevni prostor odvod, stopnja 1	SSR modul → 220V Ventilatorji (Pin 6)
+Desna	16	GPIO36	Dnevni prostor odvod, stopnja 2	SSR modul → 220V Ventilatorji (Pin 7)
+Desna	17	GPIO35	Dnevni prostor odvod, stopnja 3	SSR modul → 220V Ventilatorji (Pin 8)
+				
+Leva	21	GPIO43	Kopalnica luč (del 1)	Optocoupler modul → 220V Vhod opto (Pin 1)
+Leva	22	GPIO44	Kopalnica luč (del 2)	Optocoupler modul → 220V Vhod opto (Pin 2)
+Leva	29	GPIO15	Utility luč	Optocoupler modul → 220V Vhod opto (Pin 3)
+Leva	31	GPIO18	WC luč	Optocoupler modul → 220V Vhod opto (Pin 4)
+				
+Desna	19	GPIO34	Tipka Kopalnica	Tipke+LED (Pin 1)
+Desna	20	GPIO33	Stikalo Utility	Tipke+LED (Pin 2)
+Leva	32	GPIO16	Senzor okna (del 1)	Senzor okna (Pin 1)
+Leva	34	GPIO17	Senzor okna (del 2)	Senzor okna (Pin 2)
+				
+Desna	4	GPIO48	I2C SDA	I2C (Pin 3)
+Desna	5	GPIO47	I2C SCL	I2C (Pin 4)
+				
+Desna	35	GPIO21	Kopalnica LED (WS2812)	Tipke+LED (Pin 3)

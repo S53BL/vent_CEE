@@ -1,0 +1,590 @@
+// vent.cpp - Fan control implementation for CEE
+
+#include <Arduino.h>
+#include "config.h"
+#include "globals.h"
+#include "logging.h"
+#include "vent.h"
+#include "system.h"
+
+void setupVent() {
+    pinMode(PIN_KOPALNICA_ODVOD, OUTPUT);
+    pinMode(PIN_UTILITY_ODVOD, OUTPUT);
+    pinMode(PIN_WC_ODVOD, OUTPUT);
+    pinMode(PIN_SKUPNI_VPIH, OUTPUT);
+    pinMode(PIN_DNEVNI_VPIH, OUTPUT);
+    pinMode(PIN_DNEVNI_ODVOD_1, OUTPUT);
+    pinMode(PIN_DNEVNI_ODVOD_2, OUTPUT);
+    pinMode(PIN_DNEVNI_ODVOD_3, OUTPUT);
+
+    // Initialize all outputs to LOW (off)
+    digitalWrite(PIN_KOPALNICA_ODVOD, LOW);
+    digitalWrite(PIN_UTILITY_ODVOD, LOW);
+    digitalWrite(PIN_WC_ODVOD, LOW);
+    digitalWrite(PIN_SKUPNI_VPIH, LOW);
+    digitalWrite(PIN_DNEVNI_VPIH, LOW);
+    digitalWrite(PIN_DNEVNI_ODVOD_1, LOW);
+    digitalWrite(PIN_DNEVNI_ODVOD_2, LOW);
+    digitalWrite(PIN_DNEVNI_ODVOD_3, LOW);
+}
+
+void controlFans() {
+    currentData.bathroomFan = digitalRead(PIN_KOPALNICA_ODVOD) == HIGH && !currentData.disableBathroom;
+    currentData.utilityFan = digitalRead(PIN_UTILITY_ODVOD) == HIGH && !currentData.disableUtility;
+    currentData.wcFan = digitalRead(PIN_WC_ODVOD) == HIGH;
+    currentData.commonIntake = digitalRead(PIN_SKUPNI_VPIH) == HIGH;
+    currentData.livingIntake = digitalRead(PIN_DNEVNI_VPIH) == HIGH && !currentData.disableLivingRoom;
+    currentData.livingExhaustLevel = 0;
+    if (digitalRead(PIN_DNEVNI_ODVOD_3) == HIGH && !currentData.disableLivingRoom) currentData.livingExhaustLevel = 3;
+    else if (digitalRead(PIN_DNEVNI_ODVOD_2) == HIGH && !currentData.disableLivingRoom) currentData.livingExhaustLevel = 2;
+    else if (digitalRead(PIN_DNEVNI_ODVOD_1) == HIGH && !currentData.disableLivingRoom) currentData.livingExhaustLevel = 1;
+
+    if (currentData.bathroomFan || currentData.utilityFan || currentData.wcFan) {
+        digitalWrite(PIN_SKUPNI_VPIH, HIGH);
+        currentData.commonIntake = true;
+        if (currentData.commonIntake) currentData.offTimes[3] = currentData.bathroomFan ? currentData.offTimes[0] :
+                                                                currentData.utilityFan ? currentData.offTimes[1] :
+                                                                currentData.wcFan ? currentData.offTimes[2] : 0;
+    } else {
+        digitalWrite(PIN_SKUPNI_VPIH, LOW);
+        currentData.commonIntake = false;
+        currentData.offTimes[3] = 0;
+    }
+}
+
+void controlWC() {
+    static unsigned long fanStartTime = 0;
+    static bool lastLightState = digitalRead(PIN_WC_LUC) == LOW;
+    static bool fanActive = false;
+
+    bool currentLightState = currentData.wcLight;
+    bool manualTrigger = currentData.manualTriggerWC && (!isDNDTime() || settings.dndAllowableManual);
+    bool semiAutomaticTrigger = lastLightState && !currentLightState && (!isDNDTime() || settings.dndAllowableSemiautomatic);
+
+    char logMessage[256];
+    if ((manualTrigger || (semiAutomaticTrigger && settings.dndAllowableSemiautomatic)) && !fanActive) {
+        digitalWrite(PIN_WC_ODVOD, HIGH);
+        fanStartTime = millis();
+        fanActive = true;
+        currentData.wcFan = true;
+        unsigned long duration = settings.fanDuration * 1000;
+        currentData.offTimes[2] = myTZ.now() + duration / 1000;
+        const char* triggerType = manualTrigger ? "Man Trigg" : "SemiAuto Trigg (Luč OFF)";
+        snprintf(logMessage, sizeof(logMessage), "[WC Vent] ON: %s, Trajanje: %u s", triggerType, duration / 1000);
+        logEvent(logMessage);
+        if (manualTrigger) {
+            currentData.manualTriggerWC = false;
+        }
+    } else if (semiAutomaticTrigger && isDNDTime() && !settings.dndAllowableSemiautomatic) {
+        snprintf(logMessage, sizeof(logMessage), "[WC Vent] OFF: SemiAuto Trigg zavrnjen (DND)");
+        logEvent(logMessage);
+    }
+
+    if (fanActive && (millis() - fanStartTime >= settings.fanDuration * 1000)) {
+        digitalWrite(PIN_WC_ODVOD, LOW);
+        fanActive = false;
+        currentData.wcFan = false;
+        currentData.offTimes[2] = 0;
+        snprintf(logMessage, sizeof(logMessage), "[WC Vent] OFF: Cikel konec");
+        logEvent(logMessage);
+    }
+
+    lastLightState = currentLightState;
+}
+
+void controlUtility() {
+    static unsigned long fanStartTime = 0;
+    static unsigned long lastOffTime = 0;
+    static bool fanActive = false;
+    static bool lastLightState = digitalRead(PIN_UTILITY_LUC) == LOW;
+    static bool lastSwitchState = digitalRead(PIN_UTILITY_STIKALO) == LOW;
+
+    bool currentLightState = currentData.utilityLight;
+    bool currentSwitchState = currentData.utilitySwitch;
+    bool manualTrigger = currentData.manualTriggerUtility && (!isDNDTime() || settings.dndAllowableManual);
+    bool semiAutomaticTrigger = lastLightState && !currentLightState && (!isDNDTime() || settings.dndAllowableSemiautomatic);
+    bool automaticTrigger = currentData.utilityHumidity >= settings.humThreshold &&
+                           (!isDNDTime() || settings.dndAllowableAutomatic) &&
+                           (millis() - lastOffTime >= settings.fanOffDuration / 2 * 1000 || !fanActive);
+
+    char logMessage[256];
+    if (currentSwitchState != lastSwitchState) {
+        if (!currentSwitchState) {
+            currentData.disableUtility = true;
+            snprintf(logMessage, sizeof(logMessage), "[UT Vent] Diss via SW");
+            logEvent(logMessage);
+        } else {
+            currentData.disableUtility = false;
+            manualTrigger = true;
+            snprintf(logMessage, sizeof(logMessage), "[UT Vent] Enab via SW, Man Trigg");
+            logEvent(logMessage);
+        }
+    }
+
+    if (currentData.disableUtility) {
+        if (fanActive) {
+            digitalWrite(PIN_UTILITY_ODVOD, LOW);
+            fanActive = false;
+            currentData.utilityFan = false;
+            currentData.offTimes[1] = 0;
+            snprintf(logMessage, sizeof(logMessage), "[UT Vent] OFF: Diss via REW/SW");
+            logEvent(logMessage);
+        }
+        lastLightState = currentLightState;
+        lastSwitchState = currentSwitchState;
+        return;
+    }
+
+    bool adverseConditions = currentData.externalHumidity > settings.humExtremeHighDS ||
+                            currentData.externalTemp < settings.tempMinThreshold;
+    bool reducedConditions = currentData.externalTemp < settings.tempLowThreshold;
+
+    if ((manualTrigger || semiAutomaticTrigger || automaticTrigger) && !adverseConditions && !fanActive) {
+        digitalWrite(PIN_UTILITY_ODVOD, HIGH);
+        fanStartTime = millis();
+        fanActive = true;
+        currentData.utilityFan = true;
+        unsigned long duration = reducedConditions ? settings.fanDuration / 2 * 1000 : settings.fanDuration * 1000;
+        currentData.offTimes[1] = myTZ.now() + duration / 1000;
+        const char* triggerType = manualTrigger ? "Man Trigg via SW" :
+                                 (semiAutomaticTrigger ? "SemiAuto Trigg (Luč OFF)" : "Auto Trigg");
+        snprintf(logMessage, sizeof(logMessage), "[UT Vent] ON: %s, Hut=%.1f%%>humThreshold=%.1f%%, Trajanje: %u s",
+                 triggerType, currentData.utilityHumidity, settings.humThreshold, duration / 1000);
+        logEvent(logMessage);
+        if (manualTrigger || (lastSwitchState == false && currentSwitchState == true)) {
+            currentData.manualTriggerUtility = false;
+        }
+    } else if ((manualTrigger || semiAutomaticTrigger || automaticTrigger) && adverseConditions) {
+        if (lastSensorRead > 0) {
+            snprintf(logMessage, sizeof(logMessage), "[UT Vent] OFF: Hext=%.1f%%>humExtremeHighDS=%.1f%%",
+                     currentData.externalHumidity, settings.humExtremeHighDS);
+            logEvent(logMessage);
+        }
+    }
+
+    if (fanActive) {
+        unsigned long duration = reducedConditions ? settings.fanDuration / 2 * 1000 : settings.fanDuration * 1000;
+        if (millis() - fanStartTime >= duration) {
+            digitalWrite(PIN_UTILITY_ODVOD, LOW);
+            fanActive = false;
+            currentData.utilityFan = false;
+            currentData.offTimes[1] = 0;
+            lastOffTime = millis();
+            snprintf(logMessage, sizeof(logMessage), "[UT Vent] OFF: Cikel konec (%u s)", duration / 1000);
+            logEvent(logMessage);
+        }
+    }
+
+    static unsigned long lastSensorCheck = 0;
+    if (millis() - lastSensorCheck >= SENSOR_TEST_INTERVAL * 1000) {
+        if (currentData.errorFlags & 0x02) {
+            digitalWrite(PIN_UTILITY_ODVOD, LOW);
+            fanActive = false;
+            currentData.utilityFan = false;
+            currentData.offTimes[1] = 0;
+            snprintf(logMessage, sizeof(logMessage), "[UT Vent] OFF: Senzor napaka");
+            logEvent(logMessage);
+        }
+        lastSensorCheck = millis();
+    }
+
+    lastLightState = currentLightState;
+    lastSwitchState = currentSwitchState;
+}
+
+void controlBathroom() {
+    static unsigned long fanStartTime = 0;
+    static unsigned long lastOffTime = 0;
+    static unsigned long buttonPressStart = 0;
+    static bool fanActive = false;
+    static bool lastButtonState = digitalRead(PIN_KOPALNICA_TIPKA) == LOW;
+    static bool lastLightState1 = digitalRead(PIN_KOPALNICA_LUC_1) == LOW;
+    static bool lastLightState2 = digitalRead(PIN_KOPALNICA_LUC_2) == LOW;
+    static bool lastLightOn = lastLightState1 || lastLightState2;
+    static bool isLongPress = false;
+    static unsigned long lastSensorCheck = 0;
+
+    bool currentButtonState = currentData.bathroomButton;
+    bool currentLightState1 = currentData.bathroomLight1;
+    bool currentLightState2 = currentData.bathroomLight2;
+    bool currentLightOn = currentLightState1 || currentLightState2;
+
+    char logMessage[256];
+    if (currentButtonState && !lastButtonState) {
+        buttonPressStart = millis();
+        snprintf(logMessage, sizeof(logMessage), "[KOP SW] Začetek pritiska");
+        logEvent(logMessage);
+    } else if (!currentButtonState && lastButtonState && buttonPressStart != 0) {
+        unsigned long pressDuration = millis() - buttonPressStart;
+        isLongPress = pressDuration > 1000;
+        snprintf(logMessage, sizeof(logMessage), "[KOP SW] Konec pritiska (%u ms)", pressDuration);
+        logEvent(logMessage);
+        buttonPressStart = 0;
+        if (millis() - lastOffTime < 2000) {
+            snprintf(logMessage, sizeof(logMessage), "[KOP Vent] OFF: Zaporedni pritisk ignoriran");
+            logEvent(logMessage);
+        } else if (!isDNDTime() || settings.dndAllowableManual) {
+            if (fanActive) {
+                snprintf(logMessage, sizeof(logMessage), "[KOP Vent] OFF: Prekinitev z Man Trigg");
+                logEvent(logMessage);
+                digitalWrite(PIN_KOPALNICA_ODVOD, LOW);
+                fanActive = false;
+                currentData.bathroomFan = false;
+                currentData.offTimes[0] = 0;
+            }
+            digitalWrite(PIN_KOPALNICA_ODVOD, HIGH);
+            fanStartTime = millis();
+            fanActive = true;
+            currentData.bathroomFan = true;
+            unsigned long duration = isLongPress ? settings.fanDuration * 2 * 1000 : settings.fanDuration * 1000;
+            currentData.offTimes[0] = myTZ.now() + duration / 1000;
+            const char* triggerType = isLongPress ? "Man Trigg (dolg)" : "Man Trigg (kratek)";
+            snprintf(logMessage, sizeof(logMessage), "[KOP Vent] ON: %s, Trajanje: %u s", triggerType, duration / 1000);
+            logEvent(logMessage);
+        } else {
+            snprintf(logMessage, sizeof(logMessage), "[KOP Vent] OFF: Man Trigg zavrnjen (DND)");
+            logEvent(logMessage);
+        }
+    }
+
+    if (currentData.disableBathroom) {
+        if (fanActive) {
+            digitalWrite(PIN_KOPALNICA_ODVOD, LOW);
+            fanActive = false;
+            currentData.bathroomFan = false;
+            currentData.offTimes[0] = 0;
+            snprintf(logMessage, sizeof(logMessage), "[KOP Vent] OFF: Diss via REW");
+            logEvent(logMessage);
+        }
+        lastButtonState = currentButtonState;
+        lastLightState1 = currentLightState1;
+        lastLightState2 = currentLightState2;
+        lastLightOn = currentLightOn;
+        return;
+    }
+
+    bool adverseConditions = currentData.externalHumidity > settings.humExtremeHighDS ||
+                            currentData.externalTemp < settings.tempMinThreshold;
+    bool reducedConditions = currentData.externalTemp < settings.tempLowThreshold;
+
+    bool manualTriggerREW = currentData.manualTriggerBathroom && (!isDNDTime() || settings.dndAllowableManual);
+    bool semiAutomaticTrigger = lastLightOn && !currentLightOn && (!isDNDTime() || settings.dndAllowableSemiautomatic);
+    bool automaticTrigger = currentData.bathroomHumidity >= settings.humThreshold &&
+                           (!isDNDTime() || settings.dndAllowableAutomatic) &&
+                           (millis() - lastOffTime >= settings.fanOffDuration / 2 * 1000 || !fanActive);
+
+    if ((manualTriggerREW || semiAutomaticTrigger || automaticTrigger) && !adverseConditions && !fanActive) {
+        digitalWrite(PIN_KOPALNICA_ODVOD, HIGH);
+        fanStartTime = millis();
+        fanActive = true;
+        currentData.bathroomFan = true;
+        unsigned long duration = reducedConditions ? settings.fanDuration / 2 * 1000 : settings.fanDuration * 1000;
+        currentData.offTimes[0] = myTZ.now() + duration / 1000;
+
+        const char* triggerType;
+        if (manualTriggerREW) {
+            triggerType = "Man Trigg via REW";
+            currentData.manualTriggerBathroom = false;
+        } else if (semiAutomaticTrigger) {
+            triggerType = "SemiAuto Trigg (Luč OFF)";
+        } else {
+            triggerType = "Auto Trigg";
+        }
+
+        snprintf(logMessage, sizeof(logMessage), "[KOP Vent] ON: %s, Hkop=%.1f%%>humThreshold=%.1f%%, Trajanje: %u s",
+                 triggerType, currentData.bathroomHumidity, settings.humThreshold, duration / 1000);
+        logEvent(logMessage);
+    } else if ((semiAutomaticTrigger || automaticTrigger) && adverseConditions) {
+        if (lastSensorRead > 0) {
+            snprintf(logMessage, sizeof(logMessage), "[KOP Vent] OFF: Hext=%.1f%%>humExtremeHighDS=%.1f%%",
+                     currentData.externalHumidity, settings.humExtremeHighDS);
+            logEvent(logMessage);
+        }
+    }
+
+    if (fanActive) {
+        unsigned long duration = (isLongPress && manualTriggerREW) ?
+                                settings.fanDuration * 2 * 1000 :
+                                (reducedConditions ? settings.fanDuration / 2 * 1000 : settings.fanDuration * 1000);
+        if (millis() - fanStartTime >= duration) {
+            digitalWrite(PIN_KOPALNICA_ODVOD, LOW);
+            fanActive = false;
+            currentData.bathroomFan = false;
+            currentData.offTimes[0] = 0;
+            lastOffTime = millis();
+            snprintf(logMessage, sizeof(logMessage), "[KOP Vent] OFF: Cikel konec (%u s)", duration / 1000);
+            logEvent(logMessage);
+        }
+    }
+
+    if (millis() - lastSensorCheck >= SENSOR_TEST_INTERVAL * 1000) {
+        if (currentData.errorFlags & 0x01) {
+            digitalWrite(PIN_KOPALNICA_ODVOD, LOW);
+            fanActive = false;
+            currentData.bathroomFan = false;
+            currentData.offTimes[0] = 0;
+            snprintf(logMessage, sizeof(logMessage), "[KOP Vent] OFF: Senzor napaka");
+            logEvent(logMessage);
+        } else if (bmePresent && sht41Present && abs(currentData.bathroomTemp - currentData.utilityTemp) > 10.0) {
+            digitalWrite(PIN_KOPALNICA_ODVOD, LOW);
+            fanActive = false;
+            currentData.bathroomFan = false;
+            currentData.offTimes[0] = 0;
+            snprintf(logMessage, sizeof(logMessage), "[KOP Vent] OFF: Temp odstopanje >10°C");
+            logEvent(logMessage);
+        }
+        lastSensorCheck = millis();
+    }
+
+    lastButtonState = currentButtonState;
+    lastLightState1 = currentLightState1;
+    lastLightState2 = currentLightState2;
+    lastLightOn = currentLightOn;
+}
+
+void controlLivingRoom() {
+    static unsigned long fanStartTime = 0;
+    static unsigned long lastOffTime = 0;
+    static unsigned long lastCycleLog = 0;
+    static unsigned long lastCyclePercentUpdate = 0;
+    static bool fanActive = false;
+    static uint8_t currentLevel = 0;
+    static bool manualMode = false;
+    static bool isInitialized = false;
+    static float cyclePercent = settings.cycleActivePercentDS;
+
+    char logMessage[256];
+    if (!isInitialized) {
+        lastOffTime = millis();
+        isInitialized = true;
+    }
+
+    bool windowOpen = !currentData.windowSensor1 || !currentData.windowSensor2;
+    bool isDND = isDNDTime();
+    bool isNND = isNNDTime();
+    bool adverseConditions = currentData.externalHumidity > settings.humExtremeHighDS ||
+                            currentData.externalTemp > settings.tempExtremeHighDS ||
+                            currentData.externalTemp < settings.tempExtremeLowDS;
+
+    if (millis() - lastCyclePercentUpdate >= 60000) {
+        cyclePercent = settings.cycleActivePercentDS;
+        bool highIncrement = false;
+        const char* reason = "aktiven";
+
+        if (currentData.livingHumidity >= settings.humThresholdDS) {
+            cyclePercent += settings.incrementPercentLowDS;
+            reason = "H_DS>humThresholdDS";
+        }
+        if (currentData.livingHumidity >= settings.humThresholdHighDS) {
+            cyclePercent += settings.incrementPercentHighDS;
+            highIncrement = true;
+            reason = "H_DS>humThresholdHighDS";
+        }
+        if (currentData.livingCO2 >= settings.co2ThresholdLowDS) {
+            cyclePercent += settings.incrementPercentLowDS;
+            reason = "CO2>co2ThresholdLowDS";
+        }
+        if (currentData.livingCO2 >= settings.co2ThresholdHighDS) {
+            cyclePercent += settings.incrementPercentHighDS;
+            highIncrement = true;
+            reason = "CO2>co2ThresholdHighDS";
+        }
+        if (!isNND && ((currentData.livingTemp > settings.tempIdealDS && currentData.externalTemp < currentData.livingTemp) ||
+                       (currentData.livingTemp < settings.tempIdealDS && currentData.externalTemp > currentData.livingTemp))) {
+            cyclePercent += settings.incrementPercentTempDS;
+            reason = "T_DS!=tempIdealDS";
+        }
+        if (adverseConditions) {
+            cyclePercent *= 0.5;
+            reason = "Hext>humExtremeHighDS";
+        }
+        if (windowOpen) {
+            cyclePercent = 0.0;
+            reason = "Okna";
+        }
+        if (currentData.disableLivingRoom) {
+            cyclePercent = 0.0;
+            reason = "CYD";
+        }
+        if (isNND) {
+            cyclePercent = 0.0;
+            reason = "NND";
+        }
+        lastCyclePercentUpdate = millis();
+        currentData.livingRoomDutyCycle = cyclePercent; // Update global duty cycle
+    }
+
+    if (millis() - lastCycleLog >= 300000) {
+        const char* reason = "aktiven";
+        if (windowOpen) reason = "Okna";
+        else if (currentData.disableLivingRoom) reason = "CYD";
+        else if (isNND) reason = "NND";
+        snprintf(logMessage, sizeof(logMessage), "[DS] Cikel %.1f%%, %s, DND:%s, NND:%s, Stopnja:%d",
+                 cyclePercent, reason, isDND ? "V" : "Zunaj", isNND ? "V" : "Zunaj", currentLevel);
+        logEvent(logMessage);
+        lastCycleLog = millis();
+    }
+
+    if (windowOpen || currentData.disableLivingRoom) {
+        if (fanActive) {
+            digitalWrite(PIN_DNEVNI_VPIH, LOW);
+            digitalWrite(PIN_DNEVNI_ODVOD_1, LOW);
+            digitalWrite(PIN_DNEVNI_ODVOD_2, LOW);
+            digitalWrite(PIN_DNEVNI_ODVOD_3, LOW);
+            fanActive = false;
+            currentLevel = 0;
+            manualMode = false;
+            currentData.livingIntake = false;
+            currentData.livingExhaustLevel = 0;
+            currentData.offTimes[4] = 0;
+            currentData.offTimes[5] = 0;
+            lastOffTime = millis();
+            const char* reason = windowOpen ? "Okna" : "CYD";
+            snprintf(logMessage, sizeof(logMessage), "[DS Vent] OFF: Diss via %s", reason);
+            logEvent(logMessage);
+        }
+        return;
+    }
+
+    bool reducedConditions = currentData.externalTemp < settings.tempLowThreshold;
+    static bool lastAdverseLogged = false;
+    if (lastSensorRead > 0 && adverseConditions && !lastAdverseLogged) {
+        snprintf(logMessage, sizeof(logMessage), "[DS Vent] OFF: Hext=%.1f%%>humExtremeHighDS=%.1f%%",
+                 currentData.externalHumidity, settings.humExtremeHighDS);
+        logEvent(logMessage);
+        lastAdverseLogged = true;
+    } else if (lastSensorRead > 0 && !adverseConditions && lastAdverseLogged) {
+        lastAdverseLogged = false;
+    }
+
+    bool manualTrigger = currentData.manualTriggerLivingRoom && (!isDNDTime() || settings.dndAllowableManual);
+    if (manualTrigger && !windowOpen) {
+        if (fanActive) {
+            snprintf(logMessage, sizeof(logMessage), "[DS Vent] OFF: Prekinitev z Man Trigg");
+            logEvent(logMessage);
+            digitalWrite(PIN_DNEVNI_VPIH, LOW);
+            digitalWrite(PIN_DNEVNI_ODVOD_1, LOW);
+            digitalWrite(PIN_DNEVNI_ODVOD_2, LOW);
+            digitalWrite(PIN_DNEVNI_ODVOD_3, LOW);
+        }
+        digitalWrite(PIN_DNEVNI_VPIH, HIGH);
+        digitalWrite(PIN_DNEVNI_ODVOD_2, HIGH);
+        fanActive = true;
+        manualMode = true;
+        fanStartTime = millis();
+        currentLevel = 2;
+        currentData.livingIntake = true;
+        currentData.livingExhaustLevel = 2;
+        unsigned long duration = settings.fanDuration * 2 * 1000;
+        currentData.offTimes[4] = myTZ.now() + duration / 1000;
+        currentData.offTimes[5] = currentData.offTimes[4];
+        time_t offTime = currentData.offTimes[4];
+        struct tm* tm = localtime(&offTime);
+        char offTimeStr[20];
+        strftime(offTimeStr, sizeof(offTimeStr), "%Y-%m-%d %H:%M:%S", tm);
+        currentData.manualTriggerLivingRoom = false;
+        snprintf(logMessage, sizeof(logMessage), "[DS Vent] ON: Man Trigg via CYD, Trajanje: %u s, Izklop ob: %s", duration / 1000, offTimeStr);
+        logEvent(logMessage);
+    }
+
+    if (fanActive && manualMode) {
+        if (millis() - fanStartTime >= settings.fanDuration * 2 * 1000) {
+            digitalWrite(PIN_DNEVNI_VPIH, LOW);
+            digitalWrite(PIN_DNEVNI_ODVOD_2, LOW);
+            fanActive = false;
+            manualMode = false;
+            currentLevel = 0;
+            currentData.livingIntake = false;
+            currentData.livingExhaustLevel = 0;
+            currentData.offTimes[4] = 0;
+            currentData.offTimes[5] = 0;
+            lastOffTime = millis();
+            snprintf(logMessage, sizeof(logMessage), "[DS Vent] OFF: Man cikel konec");
+            logEvent(logMessage);
+        }
+        return;
+    }
+
+    bool automaticAllowed = !isDND || settings.dndAllowableAutomatic;
+    if (!automaticAllowed || isNND) {
+        if (fanActive && !manualMode) {
+            digitalWrite(PIN_DNEVNI_VPIH, LOW);
+            digitalWrite(PIN_DNEVNI_ODVOD_1, LOW);
+            digitalWrite(PIN_DNEVNI_ODVOD_2, LOW);
+            digitalWrite(PIN_DNEVNI_ODVOD_3, LOW);
+            fanActive = false;
+            currentLevel = 0;
+            currentData.livingIntake = false;
+            currentData.livingExhaustLevel = 0;
+            currentData.offTimes[4] = 0;
+            currentData.offTimes[5] = 0;
+            lastOffTime = millis();
+            snprintf(logMessage, sizeof(logMessage), "[DS Vent] OFF: Auto cikel ustavljen (DND/NND)");
+            logEvent(logMessage);
+        }
+        return;
+    }
+
+    unsigned long cycleDurationMs = settings.cycleDurationDS * 1000;
+    unsigned long activeDurationMs = cycleDurationMs * (cyclePercent / 100.0);
+    unsigned long inactiveDurationMs = cycleDurationMs - activeDurationMs;
+
+    if (!fanActive && millis() - lastOffTime >= inactiveDurationMs) {
+        digitalWrite(PIN_DNEVNI_VPIH, HIGH);
+        digitalWrite(PIN_DNEVNI_ODVOD_1, LOW);
+        digitalWrite(PIN_DNEVNI_ODVOD_2, LOW);
+        digitalWrite(PIN_DNEVNI_ODVOD_3, LOW);
+        bool highIncrement = currentData.livingHumidity >= settings.humThresholdHighDS ||
+                             currentData.livingCO2 >= settings.co2ThresholdHighDS;
+        uint8_t newLevel = isDND ? 1 : (highIncrement ? 3 : 1);
+        if (newLevel == 1) digitalWrite(PIN_DNEVNI_ODVOD_1, HIGH);
+        else if (newLevel == 3) digitalWrite(PIN_DNEVNI_ODVOD_3, HIGH);
+        fanActive = true;
+        currentLevel = newLevel;
+        fanStartTime = millis();
+        currentData.livingIntake = true;
+        currentData.livingExhaustLevel = newLevel;
+        unsigned long duration = activeDurationMs;
+        currentData.offTimes[4] = myTZ.now() + duration / 1000;
+        currentData.offTimes[5] = currentData.offTimes[4];
+        time_t offTime = currentData.offTimes[4];
+        struct tm* tm = localtime(&offTime);
+        char offTimeStr[20];
+        strftime(offTimeStr, sizeof(offTimeStr), "%Y-%m-%d %H:%M:%S", tm);
+        const char* reason = highIncrement ? "H_DS=%.1f%%>humThresholdHighDS=%.1f%%" : "Auto cikel";
+        snprintf(logMessage, sizeof(logMessage), "[DS Vent] ON: %s, Stopnja %d, Trajanje: %u s, Izklop ob: %s", reason, newLevel, duration / 1000, offTimeStr);
+        logEvent(logMessage);
+    } else if (fanActive && millis() - fanStartTime >= activeDurationMs) {
+        digitalWrite(PIN_DNEVNI_VPIH, LOW);
+        digitalWrite(PIN_DNEVNI_ODVOD_1, LOW);
+        digitalWrite(PIN_DNEVNI_ODVOD_2, LOW);
+        digitalWrite(PIN_DNEVNI_ODVOD_3, LOW);
+        fanActive = false;
+        currentLevel = 0;
+        currentData.livingIntake = false;
+        currentData.livingExhaustLevel = 0;
+        currentData.offTimes[4] = 0;
+        currentData.offTimes[5] = 0;
+        lastOffTime = millis();
+        snprintf(logMessage, sizeof(logMessage), "[DS Vent] OFF: Auto cikel konec");
+        logEvent(logMessage);
+    }
+}
+
+void calculatePower() {
+    currentData.currentPower = 0.0;
+
+    // Sum power consumption of all active fans
+    if (currentData.bathroomFan) currentData.currentPower += 20.0;
+    if (currentData.utilityFan) currentData.currentPower += 20.0;
+    if (currentData.wcFan) currentData.currentPower += 20.0;
+    if (currentData.commonIntake) currentData.currentPower += 30.0;
+    if (currentData.livingIntake) currentData.currentPower += 30.0;
+
+    // Living room exhaust based on level
+    if (currentData.livingExhaustLevel == 1) currentData.currentPower += 120.0;
+    else if (currentData.livingExhaustLevel == 2) currentData.currentPower += 150.0;
+    else if (currentData.livingExhaustLevel == 3) currentData.currentPower += 200.0;
+}
+
+// vent.cpp
