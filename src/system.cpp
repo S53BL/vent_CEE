@@ -7,7 +7,7 @@
 #include "logging.h"
 
 bool isDNDTime() {
-    if (!timeSynced) return false;
+    if (!timeSynced) return false;  // Vedno dovoljeno če ni časa
 
     time_t now = myTZ.now();  // Unix time
     struct tm* tm = localtime(&now);  // Convert to local time
@@ -18,7 +18,7 @@ bool isDNDTime() {
 }
 
 bool isNNDTime() {
-    if (!timeSynced) return false;
+    if (!timeSynced) return false;  // Vedno dovoljeno če ni časa
 
     time_t now = myTZ.now();
     struct tm* tm = localtime(&now);

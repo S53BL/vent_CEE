@@ -35,4 +35,8 @@ extern Timezone myTZ;
 extern bool timeSynced;
 extern const char* ntpServers[];
 
+// External data validation
+extern bool externalDataValid;
+extern uint32_t lastSensorDataTime;
+
 #endif // GLOBALS_H

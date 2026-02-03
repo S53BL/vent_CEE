@@ -58,6 +58,36 @@ void controlWC() {
     static bool fanActive = false;
 
     bool currentLightState = currentData.wcLight;
+
+    // Če ni NTP sinhronizacije - samo lokalni triggerji delujejo
+    if (!timeSynced) {
+        // Handle manual triggers only
+        char logMessage[256];
+        if (currentData.manualTriggerWC) {
+            digitalWrite(PIN_WC_ODVOD, HIGH);
+            fanStartTime = millis();
+            fanActive = true;
+            currentData.wcFan = true;
+            unsigned long duration = settings.fanDuration * 1000;
+            snprintf(logMessage, sizeof(logMessage), "[WC Vent] ON: Man Trigg via REW, Trajanje: %u s", duration / 1000);
+            logEvent(logMessage);
+            currentData.manualTriggerWC = false;
+        }
+
+        // Handle timeout for active fans
+        if (fanActive && (millis() - fanStartTime >= settings.fanDuration * 1000)) {
+            digitalWrite(PIN_WC_ODVOD, LOW);
+            fanActive = false;
+            currentData.wcFan = false;
+            currentData.offTimes[2] = 0;
+            snprintf(logMessage, sizeof(logMessage), "[WC Vent] OFF: Cikel konec");
+            logEvent(logMessage);
+        }
+
+        lastLightState = currentLightState;
+        return;
+    }
+
     bool manualTrigger = currentData.manualTriggerWC && (!isDNDTime() || settings.dndAllowableManual);
     bool semiAutomaticTrigger = lastLightState && !currentLightState && (!isDNDTime() || settings.dndAllowableSemiautomatic);
 
@@ -101,11 +131,65 @@ void controlUtility() {
 
     bool currentLightState = currentData.utilityLight;
     bool currentSwitchState = currentData.utilitySwitch;
+
+    // Če ni NTP sinhronizacije - samo lokalni triggerji delujejo
+    if (!timeSynced) {
+        // Handle switch toggles and manual triggers only
+        char logMessage[256];
+        if (currentSwitchState != lastSwitchState) {
+            if (!currentSwitchState) {
+                currentData.disableUtility = true;
+                snprintf(logMessage, sizeof(logMessage), "[UT Vent] Diss via SW");
+                logEvent(logMessage);
+            } else {
+                currentData.disableUtility = false;
+                snprintf(logMessage, sizeof(logMessage), "[UT Vent] Enab via SW");
+                logEvent(logMessage);
+            }
+        }
+
+        if (currentData.disableUtility) {
+            if (fanActive) {
+                digitalWrite(PIN_UTILITY_ODVOD, LOW);
+                fanActive = false;
+                currentData.utilityFan = false;
+                currentData.offTimes[1] = 0;
+                snprintf(logMessage, sizeof(logMessage), "[UT Vent] OFF: Diss via REW/SW");
+                logEvent(logMessage);
+            }
+        } else if (currentData.manualTriggerUtility) {
+            digitalWrite(PIN_UTILITY_ODVOD, HIGH);
+            fanStartTime = millis();
+            fanActive = true;
+            currentData.utilityFan = true;
+            unsigned long duration = settings.fanDuration * 1000;
+            snprintf(logMessage, sizeof(logMessage), "[UT Vent] ON: Man Trigg via REW, Trajanje: %u s", duration / 1000);
+            logEvent(logMessage);
+            currentData.manualTriggerUtility = false;
+        }
+
+        // Handle timeout for active fans
+        if (fanActive && (millis() - fanStartTime >= settings.fanDuration * 1000)) {
+            digitalWrite(PIN_UTILITY_ODVOD, LOW);
+            fanActive = false;
+            currentData.utilityFan = false;
+            currentData.offTimes[1] = 0;
+            lastOffTime = millis();
+            snprintf(logMessage, sizeof(logMessage), "[UT Vent] OFF: Cikel konec");
+            logEvent(logMessage);
+        }
+
+        lastLightState = currentLightState;
+        lastSwitchState = currentSwitchState;
+        return;
+    }
+
     bool manualTrigger = currentData.manualTriggerUtility && (!isDNDTime() || settings.dndAllowableManual);
     bool semiAutomaticTrigger = lastLightState && !currentLightState && (!isDNDTime() || settings.dndAllowableSemiautomatic);
     bool automaticTrigger = currentData.utilityHumidity >= settings.humThreshold &&
                            (!isDNDTime() || settings.dndAllowableAutomatic) &&
-                           (millis() - lastOffTime >= settings.fanOffDuration / 2 * 1000 || !fanActive);
+                           (millis() - lastOffTime >= settings.fanOffDuration / 2 * 1000 || !fanActive) &&
+                           externalDataValid;
 
     char logMessage[256];
     if (currentSwitchState != lastSwitchState) {
@@ -209,6 +293,61 @@ void controlBathroom() {
     bool currentLightState2 = currentData.bathroomLight2;
     bool currentLightOn = currentLightState1 || currentLightState2;
 
+    // Če ni NTP sinhronizacije - samo lokalni triggerji delujejo
+    if (!timeSynced) {
+        // Handle manual button triggers only
+        char logMessage[256];
+        if (currentButtonState && !lastButtonState) {
+            buttonPressStart = millis();
+            snprintf(logMessage, sizeof(logMessage), "[KOP SW] Začetek pritiska");
+            logEvent(logMessage);
+        } else if (!currentButtonState && lastButtonState && buttonPressStart != 0) {
+            unsigned long pressDuration = millis() - buttonPressStart;
+            isLongPress = pressDuration > 1000;
+            snprintf(logMessage, sizeof(logMessage), "[KOP SW] Konec pritiska (%u ms)", pressDuration);
+            logEvent(logMessage);
+            buttonPressStart = 0;
+            if (millis() - lastOffTime < 2000) {
+                snprintf(logMessage, sizeof(logMessage), "[KOP Vent] OFF: Zaporedni pritisk ignoriran");
+                logEvent(logMessage);
+            } else {
+                if (fanActive) {
+                    snprintf(logMessage, sizeof(logMessage), "[KOP Vent] OFF: Prekinitev z Man Trigg");
+                    logEvent(logMessage);
+                    digitalWrite(PIN_KOPALNICA_ODVOD, LOW);
+                    fanActive = false;
+                    currentData.bathroomFan = false;
+                    currentData.offTimes[0] = 0;
+                }
+                digitalWrite(PIN_KOPALNICA_ODVOD, HIGH);
+                fanStartTime = millis();
+                fanActive = true;
+                currentData.bathroomFan = true;
+                unsigned long duration = isLongPress ? settings.fanDuration * 2 * 1000 : settings.fanDuration * 1000;
+                const char* triggerType = isLongPress ? "Man Trigg (dolg)" : "Man Trigg (kratek)";
+                snprintf(logMessage, sizeof(logMessage), "[KOP Vent] ON: %s, Trajanje: %u s", triggerType, duration / 1000);
+                logEvent(logMessage);
+            }
+        }
+
+        // Handle timeout for active fans
+        if (fanActive && (millis() - fanStartTime >= (isLongPress ? settings.fanDuration * 2 * 1000 : settings.fanDuration * 1000))) {
+            digitalWrite(PIN_KOPALNICA_ODVOD, LOW);
+            fanActive = false;
+            currentData.bathroomFan = false;
+            currentData.offTimes[0] = 0;
+            lastOffTime = millis();
+            snprintf(logMessage, sizeof(logMessage), "[KOP Vent] OFF: Cikel konec");
+            logEvent(logMessage);
+        }
+
+        lastButtonState = currentButtonState;
+        lastLightState1 = currentLightState1;
+        lastLightState2 = currentLightState2;
+        lastLightOn = currentLightOn;
+        return;
+    }
+
     char logMessage[256];
     if (currentButtonState && !lastButtonState) {
         buttonPressStart = millis();
@@ -271,7 +410,8 @@ void controlBathroom() {
     bool semiAutomaticTrigger = lastLightOn && !currentLightOn && (!isDNDTime() || settings.dndAllowableSemiautomatic);
     bool automaticTrigger = currentData.bathroomHumidity >= settings.humThreshold &&
                            (!isDNDTime() || settings.dndAllowableAutomatic) &&
-                           (millis() - lastOffTime >= settings.fanOffDuration / 2 * 1000 || !fanActive);
+                           (millis() - lastOffTime >= settings.fanOffDuration / 2 * 1000 || !fanActive) &&
+                           externalDataValid;
 
     if ((manualTriggerREW || semiAutomaticTrigger || automaticTrigger) && !adverseConditions && !fanActive) {
         digitalWrite(PIN_KOPALNICA_ODVOD, HIGH);
@@ -357,6 +497,80 @@ void controlLivingRoom() {
     if (!isInitialized) {
         lastOffTime = millis();
         isInitialized = true;
+    }
+
+    // Če ni NTP sinhronizacije - samo lokalni triggerji delujejo
+    if (!timeSynced) {
+        // Handle manual triggers only
+        if (currentData.manualTriggerLivingRoom) {
+            if (fanActive) {
+                digitalWrite(PIN_DNEVNI_VPIH, LOW);
+                digitalWrite(PIN_DNEVNI_ODVOD_1, LOW);
+                digitalWrite(PIN_DNEVNI_ODVOD_2, LOW);
+                digitalWrite(PIN_DNEVNI_ODVOD_3, LOW);
+                fanActive = false;
+                currentLevel = 0;
+                manualMode = false;
+                currentData.livingIntake = false;
+                currentData.livingExhaustLevel = 0;
+                currentData.offTimes[4] = 0;
+                currentData.offTimes[5] = 0;
+                lastOffTime = millis();
+                snprintf(logMessage, sizeof(logMessage), "[DS Vent] OFF: Prekinitev z Man Trigg");
+                logEvent(logMessage);
+            }
+            digitalWrite(PIN_DNEVNI_VPIH, HIGH);
+            digitalWrite(PIN_DNEVNI_ODVOD_2, HIGH);
+            fanActive = true;
+            manualMode = true;
+            fanStartTime = millis();
+            currentLevel = 2;
+            currentData.livingIntake = true;
+            currentData.livingExhaustLevel = 2;
+            unsigned long duration = settings.fanDuration * 2 * 1000;
+            currentData.manualTriggerLivingRoom = false;
+            snprintf(logMessage, sizeof(logMessage), "[DS Vent] ON: Man Trigg via CYD, Trajanje: %u s", duration / 1000);
+            logEvent(logMessage);
+        }
+
+        // Handle timeout for active fans
+        if (fanActive && manualMode && (millis() - fanStartTime >= settings.fanDuration * 2 * 1000)) {
+            digitalWrite(PIN_DNEVNI_VPIH, LOW);
+            digitalWrite(PIN_DNEVNI_ODVOD_2, LOW);
+            fanActive = false;
+            manualMode = false;
+            currentLevel = 0;
+            currentData.livingIntake = false;
+            currentData.livingExhaustLevel = 0;
+            currentData.offTimes[4] = 0;
+            currentData.offTimes[5] = 0;
+            lastOffTime = millis();
+            snprintf(logMessage, sizeof(logMessage), "[DS Vent] OFF: Man cikel konec");
+            logEvent(logMessage);
+        }
+
+        // Handle window/open door disable
+        bool windowOpen = !currentData.windowSensor1 || !currentData.windowSensor2;
+        if (windowOpen || currentData.disableLivingRoom) {
+            if (fanActive) {
+                digitalWrite(PIN_DNEVNI_VPIH, LOW);
+                digitalWrite(PIN_DNEVNI_ODVOD_1, LOW);
+                digitalWrite(PIN_DNEVNI_ODVOD_2, LOW);
+                digitalWrite(PIN_DNEVNI_ODVOD_3, LOW);
+                fanActive = false;
+                currentLevel = 0;
+                manualMode = false;
+                currentData.livingIntake = false;
+                currentData.livingExhaustLevel = 0;
+                currentData.offTimes[4] = 0;
+                currentData.offTimes[5] = 0;
+                lastOffTime = millis();
+                const char* reason = windowOpen ? "Okna" : "CYD";
+                snprintf(logMessage, sizeof(logMessage), "[DS Vent] OFF: Diss via %s", reason);
+                logEvent(logMessage);
+            }
+        }
+        return;
     }
 
     bool windowOpen = !currentData.windowSensor1 || !currentData.windowSensor2;
@@ -529,7 +743,7 @@ void controlLivingRoom() {
     unsigned long activeDurationMs = cycleDurationMs * (cyclePercent / 100.0);
     unsigned long inactiveDurationMs = cycleDurationMs - activeDurationMs;
 
-    if (!fanActive && millis() - lastOffTime >= inactiveDurationMs) {
+    if (!fanActive && millis() - lastOffTime >= inactiveDurationMs && externalDataValid) {
         digitalWrite(PIN_DNEVNI_VPIH, HIGH);
         digitalWrite(PIN_DNEVNI_ODVOD_1, LOW);
         digitalWrite(PIN_DNEVNI_ODVOD_2, LOW);

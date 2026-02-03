@@ -17,51 +17,56 @@
 bool sendStatusUpdate() {
     String url = String(REW_URL) + "/api/status-update";
 
-    // Create JSON payload
+    // Create JSON payload with short field names
     DynamicJsonDocument doc(512);
-    JsonArray fans = doc.createNestedArray("fans");
-    JsonArray inputs = doc.createNestedArray("inputs");
-    JsonArray offTimes = doc.createNestedArray("offTimes");
-    JsonArray errorFlags = doc.createNestedArray("errorFlags");
 
-    // Fill fans array (6 fans: WC, UT, KOP, DS exhaust, DS intake, living)
-    fans.add(currentData.bathroomFan ? (currentData.disableBathroom ? 2 : 1) : 0);  // WC
-    fans.add(currentData.utilityFan ? (currentData.disableUtility ? 2 : 1) : 0);   // UT
-    fans.add(currentData.bathroomFan ? (currentData.disableBathroom ? 2 : 1) : 0); // KOP (same as bathroom)
-    fans.add(currentData.livingExhaustLevel > 0 ? 1 : 0);  // DS exhaust
-    fans.add(currentData.commonIntake ? 1 : 0);  // DS intake
-    fans.add(currentData.livingExhaustLevel > 0 ? 1 : 0);  // Living (same as DS)
-
-    // Fill inputs array (8 inputs)
-    inputs.add(currentData.bathroomButton);
-    inputs.add(currentData.utilitySwitch);
-    inputs.add(currentData.bathroomLight1);
-    inputs.add(currentData.bathroomLight2);
-    inputs.add(currentData.utilityLight);
-    inputs.add(currentData.wcLight);
-    inputs.add(currentData.windowSensor1);
-    inputs.add(currentData.windowSensor2);
-
-    // Fill offTimes array (6 values)
-    for (int i = 0; i < 6; i++) {
-        offTimes.add(currentData.offTimes[i]);
+    // Fans (0=off, 1=on, 2=disabled)
+    doc["fwc"] = currentData.bathroomFan ? (currentData.disableBathroom ? 2 : 1) : 0;  // fan wc
+    doc["fut"] = currentData.utilityFan ? (currentData.disableUtility ? 2 : 1) : 0;   // fan utility
+    doc["fkop"] = currentData.bathroomFan ? (currentData.disableBathroom ? 2 : 1) : 0; // fan bathroom
+    // fdse: 0=off, 1=level1, 2=level2, 3=level3, 9=disabled
+    if (currentData.disableLivingRoom) {
+        doc["fdse"] = 9;  // disabled
+    } else {
+        doc["fdse"] = currentData.livingExhaustLevel;  // 0, 1, 2, ali 3
     }
+    doc["fdsi"] = currentData.commonIntake ? 1 : 0;  // fan living intake
+    doc["fliv"] = currentData.livingExhaustLevel > 0 ? 1 : 0;  // fan living
 
-    // Fill errorFlags array (5 values)
-    errorFlags.add(currentData.errorFlags & ERR_BME280 ? 1 : 0);
-    errorFlags.add(currentData.errorFlags & ERR_SHT41 ? 1 : 0);
-    errorFlags.add(0); // ERR_LITTLEFS
-    errorFlags.add(0); // ERR_HTTP
-    errorFlags.add(0); // ERR_SD
+    // Inputs (digital states)
+    doc["ibt"] = currentData.bathroomButton;     // input bathroom button
+    doc["iut"] = currentData.utilitySwitch;      // input utility switch
+    doc["il1"] = currentData.bathroomLight1;     // input bathroom light 1
+    doc["il2"] = currentData.bathroomLight2;     // input bathroom light 2
+    doc["iul"] = currentData.utilityLight;       // input utility light
+    doc["iwc"] = currentData.wcLight;            // input wc light
+    doc["iwr"] = currentData.windowSensor1;      // input window roof
+    doc["iwb"] = currentData.windowSensor2;      // input window balcony
 
-    // Add sensor data
-    doc["bathroomTemp"] = currentData.bathroomTemp;
-    doc["bathroomHumidity"] = currentData.bathroomHumidity;
-    doc["bathroomPressure"] = currentData.bathroomPressure;
-    doc["utilityTemp"] = currentData.utilityTemp;
-    doc["utilityHumidity"] = currentData.utilityHumidity;
-    doc["currentPower"] = currentData.currentPower;
-    doc["energyConsumption"] = currentData.energyConsumption;
+    // Off-times (Unix timestamps)
+    doc["twc"] = currentData.offTimes[0];        // time wc
+    doc["tut"] = currentData.offTimes[1];        // time utility
+    doc["tkop"] = currentData.offTimes[2];       // time bathroom
+    doc["tdse"] = currentData.offTimes[3];       // time living exhaust
+    doc["tdsi"] = currentData.offTimes[4];       // time living intake
+    doc["tliv"] = currentData.offTimes[5];       // time living
+
+    // Error flags (0=ok, 1=error)
+    doc["ebm"] = currentData.errorFlags & ERR_BME280 ? 1 : 0;   // error bme280
+    doc["esht"] = currentData.errorFlags & ERR_SHT41 ? 1 : 0;   // error sht41
+    doc["elfs"] = 0;  // error littlefs (not implemented)
+    doc["ehtp"] = 0;  // error http (not implemented)
+    doc["esd"] = 0;   // error sd (not implemented)
+
+    // Sensor data
+    doc["tbat"] = currentData.bathroomTemp;      // temperature bathroom
+    doc["hbat"] = currentData.bathroomHumidity;  // humidity bathroom
+    doc["pbat"] = currentData.bathroomPressure;  // pressure bathroom
+    doc["tutl"] = currentData.utilityTemp;       // temperature utility
+    doc["hutl"] = currentData.utilityHumidity;   // humidity utility
+    doc["pwr"] = currentData.currentPower;       // current power
+    doc["eng"] = currentData.energyConsumption;  // energy consumption
+    doc["dlds"] = (int)currentData.livingRoomDutyCycle;  // duty cycle living room (%)
 
     String jsonString;
     serializeJson(doc, jsonString);
@@ -82,22 +87,22 @@ bool sendDewUpdate(const char* room) {
         return false;
     }
 
-    // Create JSON payload
+    // Create JSON payload with short unique names
     DynamicJsonDocument doc(256);
 
     // Get fan state for the room
     if (strcmp(room, "UT") == 0) {
-        doc["fan"] = currentData.utilityFan ? 1 : 0;
-        doc["countdown"] = currentData.offTimes[1]; // UT off time
-        doc["temp"] = currentData.utilityTemp;
-        doc["humidity"] = currentData.utilityHumidity;
-        doc["error"] = currentData.errorFlags & ERR_SHT41 ? 1 : 0;
+        doc["df"] = currentData.utilityFan ? 1 : 0;        // dew fan
+        doc["do"] = currentData.offTimes[1];               // dew off (timestamp)
+        doc["dt"] = currentData.utilityTemp;               // dew temp
+        doc["dh"] = currentData.utilityHumidity;           // dew hum
+        doc["de"] = currentData.errorFlags & ERR_SHT41 ? 1 : 0;  // dew err
     } else if (strcmp(room, "KOP") == 0) {
-        doc["fan"] = currentData.bathroomFan ? 1 : 0;
-        doc["countdown"] = currentData.offTimes[0]; // KOP off time
-        doc["temp"] = currentData.bathroomTemp;
-        doc["humidity"] = currentData.bathroomHumidity;
-        doc["error"] = currentData.errorFlags & ERR_BME280 ? 1 : 0;
+        doc["df"] = currentData.bathroomFan ? 1 : 0;       // dew fan
+        doc["do"] = currentData.offTimes[0];               // dew off (timestamp)
+        doc["dt"] = currentData.bathroomTemp;              // dew temp
+        doc["dh"] = currentData.bathroomHumidity;          // dew hum
+        doc["de"] = currentData.errorFlags & ERR_BME280 ? 1 : 0; // dew err
     }
 
     String jsonString;
@@ -107,45 +112,33 @@ bool sendDewUpdate(const char* room) {
     return sendHttpPostWithRetry(url.c_str(), jsonString);
 }
 
-// Check and send STATUS_UPDATE to REW when fan states change or periodically
+// Check and send STATUS_UPDATE to REW when states change or periodically
 void checkAndSendStatusUpdate() {
-    // Build current arrays
-    uint8_t currentFans[6] = {
-        currentData.bathroomFan ? (currentData.disableBathroom ? 2 : 1) : 0,  // WC
-        currentData.utilityFan ? (currentData.disableUtility ? 2 : 1) : 0,   // UT
-        currentData.bathroomFan ? (currentData.disableBathroom ? 2 : 1) : 0, // KOP (same as bathroom)
-        (currentData.livingExhaustLevel > 0) ? 1 : (currentData.disableLivingRoom ? 2 : 0),  // DS exhaust
-        currentData.commonIntake ? 1 : 0,  // DS intake
-        (currentData.livingExhaustLevel > 0) ? 1 : 0   // Living (same as DS)
-    };
+    // Calculate current states for comparison
+    uint8_t currentFanWc = currentData.bathroomFan ? (currentData.disableBathroom ? 2 : 1) : 0;
+    uint8_t currentFanUt = currentData.utilityFan ? (currentData.disableUtility ? 2 : 1) : 0;
+    uint8_t currentFanKop = currentData.bathroomFan ? (currentData.disableBathroom ? 2 : 1) : 0;
+    uint8_t currentFanDse = currentData.disableLivingRoom ? 9 : currentData.livingExhaustLevel;
+    uint8_t currentFanDsi = currentData.commonIntake ? 1 : 0;
+    uint8_t currentFanLiv = currentData.livingExhaustLevel > 0 ? 1 : 0;
 
-    uint8_t currentInputs[8] = {
-        currentData.bathroomButton ? 1 : 0,  // bathroomButton
-        (currentData.bathroomLight1 || currentData.bathroomLight2) ? 1 : 0,  // bathroomLight
-        currentData.utilityLight ? 1 : 0,  // utilityLight
-        currentData.wcLight ? 1 : 0,  // wcLight
-        currentData.windowSensor1 ? 1 : 0,  // windowSensor1
-        currentData.windowSensor2 ? 1 : 0,  // windowSensor2
-        0,  // skylightSensor (not implemented)
-        0   // balconyDoorSensor (not implemented)
-    };
+    uint8_t currentInputBt = currentData.bathroomButton;
+    uint8_t currentInputUt = currentData.utilitySwitch;
+    uint8_t currentInputL1 = currentData.bathroomLight1;
+    uint8_t currentInputL2 = currentData.bathroomLight2;
+    uint8_t currentInputUl = currentData.utilityLight;
+    uint8_t currentInputWc = currentData.wcLight;
+    uint8_t currentInputWr = currentData.windowSensor1;
+    uint8_t currentInputWb = currentData.windowSensor2;
 
-    // Check if changed or time to send (5 minutes)
-    bool changed = false;
-    for (int i = 0; i < 6; i++) {
-        if (currentFans[i] != currentData.previousFans[i]) {
-            changed = true;
-            break;
-        }
-    }
-    if (!changed) {
-        for (int i = 0; i < 8; i++) {
-            if (currentInputs[i] != currentData.previousInputs[i]) {
-                changed = true;
-                break;
-            }
-        }
-    }
+    // Check if any state changed (simplified - compare key values)
+    static uint8_t lastFanWc = 255, lastFanUt = 255, lastFanKop = 255;
+    static uint8_t lastInputBt = 255, lastInputUt = 255;
+
+    bool changed = (currentFanWc != lastFanWc) || (currentFanUt != lastFanUt) ||
+                   (currentFanKop != lastFanKop) || (currentInputBt != lastInputBt) ||
+                   (currentInputUt != lastInputUt);
+
     unsigned long now = millis();
     bool timeToSend = (currentData.lastStatusUpdateTime == 0) ||
                       (now - currentData.lastStatusUpdateTime >= STATUS_UPDATE_INTERVAL);
@@ -168,10 +161,13 @@ void checkAndSendStatusUpdate() {
     sendDewUpdate("UT");
     sendDewUpdate("KOP");
 
-    // Update previous arrays and timestamp only if successful
+    // Update last states and timestamp only if successful
     if (success) {
-        memcpy(currentData.previousFans, currentFans, sizeof(currentFans));
-        memcpy(currentData.previousInputs, currentInputs, sizeof(currentInputs));
+        lastFanWc = currentFanWc;
+        lastFanUt = currentFanUt;
+        lastFanKop = currentFanKop;
+        lastInputBt = currentInputBt;
+        lastInputUt = currentInputUt;
         currentData.lastStatusUpdateTime = now;
     }
 }
@@ -214,10 +210,12 @@ bool sendHttpPost(const char* url, const String& jsonData, int timeoutMs) {
 
 // Helper function with retry logic
 bool sendHttpPostWithRetry(const char* url, const String& jsonData, int maxRetries) {
+    const int HTTP_TIMEOUT_MS = 5000; // 5 second timeout
+
     for (int attempt = 1; attempt <= maxRetries; attempt++) {
         LOG_INFO("HTTP", "Attempt %d/%d to %s", attempt, maxRetries, url);
 
-        if (sendHttpPost(url, jsonData)) {
+        if (sendHttpPost(url, jsonData, HTTP_TIMEOUT_MS)) {
             return true;
         }
 

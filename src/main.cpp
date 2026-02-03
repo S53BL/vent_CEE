@@ -13,6 +13,7 @@
 #include "vent.h"
 #include "http.h"
 #include "web.h"
+#include "sd.h"
 
 #define ETH ETH2
 
@@ -109,13 +110,13 @@ void handleSensorData(AsyncWebServerRequest *request) {
     }
 
     // Update external data from REW
-    externalData.externalTemperature = doc["extTemp"] | 0.0f;
-    externalData.externalHumidity = doc["extHumidity"] | 0.0f;
-    externalData.externalPressure = doc["extPressure"] | 0.0f;
-    externalData.livingTempDS = doc["dsTemp"] | 0.0f;
-    externalData.livingHumidityDS = doc["dsHumidity"] | 0.0f;
-    externalData.livingCO2 = doc["dsCO2"] | 0;
-    externalData.timestamp = doc["timestamp"] | 0;
+    externalData.externalTemperature = doc["et"] | 0.0f;     // external temp
+    externalData.externalHumidity = doc["eh"] | 0.0f;       // external humidity
+    externalData.externalPressure = doc["ep"] | 0.0f;       // external pressure
+    externalData.livingTempDS = doc["dt"] | 0.0f;           // ds temp (living room)
+    externalData.livingHumidityDS = doc["dh"] | 0.0f;       // ds humidity
+    externalData.livingCO2 = doc["dc"] | 0;                 // ds CO2
+    externalData.timestamp = doc["ts"] | 0;                 // timestamp
 
     // Update currentData for immediate use by vent control logic
     currentData.externalTemp = externalData.externalTemperature;
@@ -125,17 +126,34 @@ void handleSensorData(AsyncWebServerRequest *request) {
     currentData.livingHumidity = externalData.livingHumidityDS;
     currentData.livingCO2 = externalData.livingCO2;
 
+    // Update external data validation
+    if (timeSynced) {
+        lastSensorDataTime = myTZ.now();
+        externalDataValid = true;
+    }
+
     LOG_INFO("HTTP", "Updated external data - Temp: %.1f°C, Hum: %.1f%%, CO2: %d",
              externalData.externalTemperature, externalData.externalHumidity, externalData.livingCO2);
 
     request->send(200, "application/json", "{\"status\":\"OK\"}");
 }
 
+void onNTPUpdate() {
+    if (timeStatus() == timeSet) {
+        timeSynced = true;
+        Serial.println("NTP: Time synchronized successfully");
+        Serial.printf("NTP: Current time: %s\n", myTZ.dateTime().c_str());
+    } else {
+        Serial.println("NTP: Sync failed");
+        timeSynced = false;
+    }
+}
+
 void setupNTP() {
     myTZ.setPosix(TZ_STRING);
     events();
     setInterval(NTP_UPDATE_INTERVAL / 1000);
-    Serial.println("NTP: Timezone set to CET/CEST");
+    Serial.println("NTP: Timezone set to CET/CEST - asynchronous mode enabled");
 }
 
 bool syncNTP() {
@@ -238,30 +256,40 @@ void setup() {
     WiFi.onEvent(onEvent);
 
     // Initialize Ethernet with W5500
-    if (!ETH.begin(ETH_PHY_W5500, 1, 14, 10, 9, HSPI_HOST, 13, 12, 11)) {
-        Serial.println("ETH init failed!");
-        while (true) {
+    bool ethInitialized = ETH.begin(ETH_PHY_W5500, 1, 14, 10, 9, HSPI_HOST, 13, 12, 11);
+    if (!ethInitialized) {
+        Serial.println("ETH init failed! Continuing without network...");
+    } else {
+        // Set static IP
+        ETH.config(IPAddress(192,168,2,192), IPAddress(192,168,2,1), IPAddress(255,255,255,0), IPAddress(192,168,2,1));
+
+        // Wait for IP with timeout (20 seconds)
+        unsigned long startTime = millis();
+        const unsigned long IP_TIMEOUT = 20000; // 20 seconds
+
+        while (ETH.localIP() == IPAddress(0, 0, 0, 0) && (millis() - startTime) < IP_TIMEOUT) {
             delay(1000);
+            Serial.println("Waiting for IP...");
+        }
+
+        if (ETH.localIP() == IPAddress(0, 0, 0, 0)) {
+            Serial.println("IP timeout! Continuing without network connection...");
+        } else {
+            Serial.print("Static IP assigned: ");
+            Serial.println(ETH.localIP());
         }
     }
-
-    // Set static IP
-    ETH.config(IPAddress(192,168,2,192), IPAddress(192,168,2,1), IPAddress(255,255,255,0), IPAddress(192,168,2,1));
-
-    // Wait for IP
-    while (ETH.localIP() == IPAddress(0, 0, 0, 0)) {
-        delay(1000);
-        Serial.println("Waiting for IP...");
-    }
-
-    Serial.print("Static IP assigned: ");
-    Serial.println(ETH.localIP());
 
     // Setup NTP
     Serial.println("Setting up NTP...");
     setupNTP();
     syncNTP();  // Try to sync NTP on startup
     Serial.println("NTP setup complete");
+
+    // Initialize SD card
+    Serial.println("Initializing SD card...");
+    initSD();
+    Serial.println("SD initialization complete");
 
     // Initialize sensors
     initSensors();
@@ -320,14 +348,44 @@ void loop() {
     // Check and send STATUS_UPDATE to REW
     checkAndSendStatusUpdate();
 
-    // NTP update logic - retry if not synced or periodic update
-    static unsigned long lastNTPUpdate = 0;
-    if (ETH.localIP() != IPAddress(0, 0, 0, 0) &&
-        (!timeSynced || now - lastNTPUpdate > NTP_UPDATE_INTERVAL)) {
-        lastNTPUpdate = now;
-        syncNTP();
+    // NTP status check - ezTime handles synchronization asynchronously
+    if (!timeSynced && timeStatus() == timeSet) {
+        timeSynced = true;
+        Serial.println("NTP: Time synchronized successfully");
+        Serial.printf("NTP: Current time: %s\n", myTZ.dateTime().c_str());
     }
 
-    // Nothing else to do here, everything is handled asynchronously
-    delay(1000);
+    // Check REW sensor data timeout
+    static unsigned long lastDataTimeoutCheck = 0;
+    if (timeSynced && externalDataValid && now - lastDataTimeoutCheck > 300000) {  // Check every 5 minutes
+        lastDataTimeoutCheck = now;
+        if ((myTZ.now() - lastSensorDataTime) > 900) {  // 15 minutes = 900 seconds
+            LOG_ERROR("HTTP", "REW sensor data timeout - no data for 15+ minutes, invalidating external data");
+            externalDataValid = false;
+        }
+    }
+
+    // Periodic network retry - every 5 minutes if no network
+    static unsigned long lastNetworkRetry = 0;
+    const unsigned long NETWORK_RETRY_INTERVAL = 300000; // 5 minutes
+    if (ETH.localIP() == IPAddress(0, 0, 0, 0) &&
+        (now - lastNetworkRetry) > NETWORK_RETRY_INTERVAL) {
+        lastNetworkRetry = now;
+        Serial.println("Retrying network connection...");
+
+        if (ETH.begin(ETH_PHY_W5500, 1, 14, 10, 9, HSPI_HOST, 13, 12, 11)) {
+            ETH.config(IPAddress(192,168,2,192), IPAddress(192,168,2,1), IPAddress(255,255,255,0), IPAddress(192,168,2,1));
+            Serial.println("Network reconnected!");
+        }
+    }
+
+    // Maintain loop timing for consistent execution
+    static unsigned long lastLoopTime = 0;
+    const unsigned long LOOP_INTERVAL = 1000; // 1 second
+
+    unsigned long currentTime = millis();
+    if (currentTime - lastLoopTime < LOOP_INTERVAL) {
+        delay(LOOP_INTERVAL - (currentTime - lastLoopTime));
+    }
+    lastLoopTime = millis();
 }

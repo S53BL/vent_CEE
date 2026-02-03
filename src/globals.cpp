@@ -11,6 +11,10 @@ const char* ntpServers[] = {"pool.ntp.org", "time.nist.gov", "time.google.com"};
 Timezone myTZ;
 bool timeSynced = false;
 
+// External data validation
+bool externalDataValid = false;
+uint32_t lastSensorDataTime = 0;
+
 ExternalData externalData;
 Settings settings;
 CurrentData currentData;

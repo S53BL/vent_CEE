@@ -7,8 +7,12 @@
 #include "config.h"
 
 void logEvent(const char* message) {
-    // Use NTP time if synced, otherwise use millis
-    unsigned long timestamp = timeSynced ? myTZ.now() : millis();
+    unsigned long timestamp;
+    if (timeSynced) {
+        timestamp = myTZ.now();  // Unix čas za zgodovinsko primerjavo
+    } else {
+        timestamp = millis() / 1000;  // Fallback v sekundah od boot-a
+    }
 
     char entry[256];
     snprintf(entry, sizeof(entry), "[%lu] %s", timestamp, message);

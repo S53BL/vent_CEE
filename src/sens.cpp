@@ -21,64 +21,103 @@ void initSensors() {
     // Initialize I2C bus
     initI2CBus();
 
+    // Set error flags by default - will be cleared only if ALL steps succeed
+    currentData.errorFlags |= ERR_SHT41;
+    currentData.errorFlags |= ERR_BME280;
+    sht41Present = false;
+    bmePresent = false;
+
     // Check and initialize SHT41
-    bool sht41_ok = false;
     if (checkI2CDevice(SHT41_ADDRESS)) {
+        LOG_INFO("SHT41", "Sensor detected, initializing...");
         sht41 = new Adafruit_SHT4x();
+
+        bool init_success = false;
         for (int retry = 0; retry < 3; retry++) {
             if (sht41->begin()) {
-                sht41_ok = true;
-                sht41Present = true;
                 sht41->setPrecision(SHT4X_HIGH_PRECISION);
                 sht41->setHeater(SHT4X_NO_HEATER);
+                init_success = true;
                 break;
+            }
+            delay(200);
+        }
+
+        if (init_success) {
+            // Try test read to verify sensor works
+            sensors_event_t humidity, temperature;
+            sht41->getEvent(&humidity, &temperature);
+
+            if (temperature.temperature >= 0.0f && temperature.temperature <= 50.0f &&
+                humidity.relative_humidity >= 10.0f && humidity.relative_humidity <= 100.0f) {
+                // All steps successful - clear error flag
+                currentData.errorFlags &= ~ERR_SHT41;
+                sht41Present = true;
+                LOG_INFO("SHT41", "Successfully initialized and tested - T:%.1f°C H:%.1f%%",
+                        temperature.temperature, humidity.relative_humidity);
             } else {
+                LOG_WARN("SHT41", "Initialization OK but test read failed - invalid values");
                 delete sht41;
                 sht41 = nullptr;
             }
-            delay(200);
+        } else {
+            LOG_WARN("SHT41", "Sensor detected but initialization failed");
+            delete sht41;
+            sht41 = nullptr;
         }
     } else {
         LOG_INFO("SHT41", "Sensor not detected on I2C bus");
     }
 
-    if (!sht41_ok) {
-        logEvent("SHT41 init failed");
-        currentData.errorFlags |= ERR_SHT41;
-        sht41Present = false;
-    }
-
     // Check and initialize BME280
-    bool bme280_ok = false;
     if (checkI2CDevice(BME280_ADDRESS)) {
+        LOG_INFO("BME280", "Sensor detected, initializing...");
         bme280 = new Adafruit_BME280();
+
+        bool init_success = false;
         for (int retry = 0; retry < 3; retry++) {
             if (bme280->begin(BME280_ADDRESS)) {
-                bme280_ok = true;
-                bmePresent = true;
+                init_success = true;
                 break;
+            }
+            delay(200);
+        }
+
+        if (init_success) {
+            // Try test read to verify sensor works
+            float temp = bme280->readTemperature();
+            float hum = bme280->readHumidity() + BME_HUMIDITY_OFFSET;
+            float press = bme280->readPressure() / 100.0;
+
+            if (temp >= 0.0f && temp <= 50.0f &&
+                hum >= 10.0f && hum <= 100.0f &&
+                press >= 300.0f && press <= 1100.0f) {
+                // All steps successful - clear error flag
+                currentData.errorFlags &= ~ERR_BME280;
+                bmePresent = true;
+                LOG_INFO("BME280", "Successfully initialized and tested - T:%.1f°C H:%.1f%% P:%.1fhPa",
+                        temp, hum, press);
             } else {
+                LOG_WARN("BME280", "Initialization OK but test read failed - invalid values");
                 delete bme280;
                 bme280 = nullptr;
             }
-            delay(200);
+        } else {
+            LOG_WARN("BME280", "Sensor detected but initialization failed");
+            delete bme280;
+            bme280 = nullptr;
         }
     } else {
         LOG_INFO("BME280", "Sensor not detected on I2C bus");
     }
 
-    if (!bme280_ok) {
-        logEvent("BME280 init failed");
-        currentData.errorFlags |= ERR_BME280;
-        bmePresent = false;
-    }
-
-    if (sht41_ok && bme280_ok) {
-        logEvent("Sensors initialized");
-    } else if (sht41_ok || bme280_ok) {
-        logEvent("Partial sensor initialization");
+    // Log final status
+    if (sht41Present && bmePresent) {
+        logEvent("All sensors initialized and tested successfully");
+    } else if (sht41Present || bmePresent) {
+        logEvent("Partial sensor initialization - some sensors failed testing");
     } else {
-        logEvent("No sensors initialized");
+        logEvent("No sensors available or failed testing");
     }
 }
 
@@ -174,8 +213,8 @@ void readSensors() {
         currentData.timestamp = myTZ.now();
     }
 
-    // Read SHT41 only if present
-    if (sht41Present) {
+    // Read SHT41 - always check presence first
+    if (checkI2CDevice(SHT41_ADDRESS) && sht41Present) {
         if (!readSensorWithRetry(
             SHT41_ADDRESS,
             readSHT41,
@@ -192,12 +231,16 @@ void readSensors() {
             currentData.errorFlags &= ~ERR_SHT41;
         }
     } else {
-        // Sensor not present, set error flag
+        // Sensor not present or not properly initialized, set error flag
         currentData.errorFlags |= ERR_SHT41;
+        if (sht41Present) {
+            LOG_WARN("SHT41", "Sensor was present but now unreachable");
+            sht41Present = false; // Mark as not present for future checks
+        }
     }
 
-    // Read BME280 only if present
-    if (bmePresent) {
+    // Read BME280 - always check presence first
+    if (checkI2CDevice(BME280_ADDRESS) && bmePresent) {
         if (!readSensorWithRetry(
             BME280_ADDRESS,
             readBME280,
@@ -214,8 +257,12 @@ void readSensors() {
             currentData.errorFlags &= ~ERR_BME280;
         }
     } else {
-        // Sensor not present, set error flag
+        // Sensor not present or not properly initialized, set error flag
         currentData.errorFlags |= ERR_BME280;
+        if (bmePresent) {
+            LOG_WARN("BME280", "Sensor was present but now unreachable");
+            bmePresent = false; // Mark as not present for future checks
+        }
     }
 }
 
@@ -257,49 +304,83 @@ void performPeriodicSensorCheck() {
 
         // Check SHT41
         if (!sht41Present && checkI2CDevice(SHT41_ADDRESS)) {
-            // Try to reinitialize SHT41
+            LOG_INFO("SHT41", "Sensor detected during periodic check, reinitializing...");
             sht41 = new Adafruit_SHT4x();
-            bool sht41_reconnected = false;
+
+            bool init_success = false;
             for (int retry = 0; retry < 3; retry++) {
                 if (sht41->begin()) {
                     sht41->setPrecision(SHT4X_HIGH_PRECISION);
                     sht41->setHeater(SHT4X_NO_HEATER);
-                    sht41_reconnected = true;
-                    sht41Present = true;
-                    currentData.errorFlags &= ~ERR_SHT41;
-                    LOG_INFO("SHT41", "Sensor ponovno priključen in inicializiran");
-                    sensorStateChanged = true;
+                    init_success = true;
                     break;
                 }
                 delay(200);
             }
-            if (!sht41_reconnected) {
+
+            if (init_success) {
+                // Try test read to verify sensor works
+                sensors_event_t humidity, temperature;
+                sht41->getEvent(&humidity, &temperature);
+
+                if (temperature.temperature >= 0.0f && temperature.temperature <= 50.0f &&
+                    humidity.relative_humidity >= 10.0f && humidity.relative_humidity <= 100.0f) {
+                    // All steps successful - clear error flag and mark as present
+                    sht41Present = true;
+                    currentData.errorFlags &= ~ERR_SHT41;
+                    LOG_INFO("SHT41", "Successfully reconnected and tested - T:%.1f°C H:%.1f%%",
+                            temperature.temperature, humidity.relative_humidity);
+                    sensorStateChanged = true;
+                } else {
+                    LOG_WARN("SHT41", "Reconnected but test read failed - invalid values");
+                    delete sht41;
+                    sht41 = nullptr;
+                }
+            } else {
+                LOG_WARN("SHT41", "Sensor detected but reinitialization failed");
                 delete sht41;
                 sht41 = nullptr;
-                LOG_WARN("SHT41", "Sensor zaznан ampak inicializacija ni uspela");
             }
         }
 
         // Check BME280
         if (!bmePresent && checkI2CDevice(BME280_ADDRESS)) {
-            // Try to reinitialize BME280
+            LOG_INFO("BME280", "Sensor detected during periodic check, reinitializing...");
             bme280 = new Adafruit_BME280();
-            bool bme_reconnected = false;
+
+            bool init_success = false;
             for (int retry = 0; retry < 3; retry++) {
                 if (bme280->begin(BME280_ADDRESS)) {
-                    bme_reconnected = true;
-                    bmePresent = true;
-                    currentData.errorFlags &= ~ERR_BME280;
-                    LOG_INFO("BME280", "Sensor ponovno priključen in inicializiran");
-                    sensorStateChanged = true;
+                    init_success = true;
                     break;
                 }
                 delay(200);
             }
-            if (!bme_reconnected) {
+
+            if (init_success) {
+                // Try test read to verify sensor works
+                float temp = bme280->readTemperature();
+                float hum = bme280->readHumidity() + BME_HUMIDITY_OFFSET;
+                float press = bme280->readPressure() / 100.0;
+
+                if (temp >= 0.0f && temp <= 50.0f &&
+                    hum >= 10.0f && hum <= 100.0f &&
+                    press >= 300.0f && press <= 1100.0f) {
+                    // All steps successful - clear error flag and mark as present
+                    bmePresent = true;
+                    currentData.errorFlags &= ~ERR_BME280;
+                    LOG_INFO("BME280", "Successfully reconnected and tested - T:%.1f°C H:%.1f%% P:%.1fhPa",
+                            temp, hum, press);
+                    sensorStateChanged = true;
+                } else {
+                    LOG_WARN("BME280", "Reconnected but test read failed - invalid values");
+                    delete bme280;
+                    bme280 = nullptr;
+                }
+            } else {
+                LOG_WARN("BME280", "Sensor detected but reinitialization failed");
                 delete bme280;
                 bme280 = nullptr;
-                LOG_WARN("BME280", "Sensor zaznан ampak inicializacija ni uspela");
             }
         }
 
