@@ -440,9 +440,6 @@ void readInputs() {
     currentData.wcLight = digitalRead(PIN_WC_LUC) == LOW;
 
     // Logging for state changes
-    static bool lastButtonState = currentData.bathroomButton;
-    static bool lastLightState1 = currentData.bathroomLight1;
-    static bool lastLightState2 = currentData.bathroomLight2;
     static bool lastWindowOpen = !currentData.windowSensor1 || !currentData.windowSensor2;
     static unsigned long lastWindowLogTime = 0;
 
@@ -450,28 +447,9 @@ void readInputs() {
                               PIN_KOPALNICA_LUC_1, PIN_KOPALNICA_LUC_2, PIN_UTILITY_LUC, PIN_WC_LUC};
     static int lastInputStates[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
 
-    bool currentButtonState = currentData.bathroomButton;
-    bool currentLightState1 = currentData.bathroomLight1;
-    bool currentLightState2 = currentData.bathroomLight2;
     bool currentWindowOpen = !currentData.windowSensor1 || !currentData.windowSensor2;
 
     char logMessage[256];
-    if (currentButtonState != lastButtonState) {
-        snprintf(logMessage, sizeof(logMessage), "[KOP SW] %s", currentButtonState ? "ON" : "OFF");
-        logEvent(logMessage);
-        lastButtonState = currentButtonState;
-    }
-    if (currentLightState1 != lastLightState1) {
-        snprintf(logMessage, sizeof(logMessage), "[KOP Luč 1] %s", currentLightState1 ? "ON" : "OFF");
-        logEvent(logMessage);
-        lastLightState1 = currentLightState1;
-    }
-    if (currentLightState2 != lastLightState2) {
-        snprintf(logMessage, sizeof(logMessage), "[KOP Luč 2] %s", currentLightState2 ? "ON" : "OFF");
-        logEvent(logMessage);
-        lastLightState2 = currentLightState2;
-    }
-
     for (int i = 0; i < 8; i++) {
         int currentState = digitalRead(inputPins[i]);
         if (currentState != lastInputStates[i]) {

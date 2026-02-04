@@ -789,16 +789,16 @@ void calculatePower() {
     currentData.currentPower = 0.0;
 
     // Sum power consumption of all active fans
-    if (currentData.bathroomFan) currentData.currentPower += 20.0;
-    if (currentData.utilityFan) currentData.currentPower += 20.0;
-    if (currentData.wcFan) currentData.currentPower += 20.0;
-    if (currentData.commonIntake) currentData.currentPower += 30.0;
-    if (currentData.livingIntake) currentData.currentPower += 30.0;
+    if (currentData.bathroomFan) currentData.currentPower += FAN_POWER_BATHROOM;
+    if (currentData.utilityFan) currentData.currentPower += FAN_POWER_UTILITY;
+    if (currentData.wcFan) currentData.currentPower += FAN_POWER_WC;
+    if (currentData.commonIntake) currentData.currentPower += FAN_POWER_COMMON_INTAKE;
+    if (currentData.livingIntake) currentData.currentPower += FAN_POWER_LIVING_INTAKE;
 
     // Living room exhaust based on level
-    if (currentData.livingExhaustLevel == 1) currentData.currentPower += 120.0;
-    else if (currentData.livingExhaustLevel == 2) currentData.currentPower += 150.0;
-    else if (currentData.livingExhaustLevel == 3) currentData.currentPower += 200.0;
+    if (currentData.livingExhaustLevel == 1) currentData.currentPower += FAN_POWER_LIVING_EXHAUST_1;
+    else if (currentData.livingExhaustLevel == 2) currentData.currentPower += FAN_POWER_LIVING_EXHAUST_2;
+    else if (currentData.livingExhaustLevel == 3) currentData.currentPower += FAN_POWER_LIVING_EXHAUST_3;
 }
 
 // vent.cpp

@@ -74,6 +74,16 @@ const bool useNVS = true; // true za produkcijo
 #define ERR_LITTLEFS 0x04
 #define ERR_HTTP 0x20
 #define TZ_STRING "CET-1CEST,M3.5.0,M10.5.0/3"  // POSIX za CET
+
+// Fan power consumption values (Watts)
+#define FAN_POWER_BATHROOM 20.0
+#define FAN_POWER_UTILITY 20.0
+#define FAN_POWER_WC 20.0
+#define FAN_POWER_COMMON_INTAKE 30.0
+#define FAN_POWER_LIVING_INTAKE 30.0
+#define FAN_POWER_LIVING_EXHAUST_1 120.0
+#define FAN_POWER_LIVING_EXHAUST_2 150.0
+#define FAN_POWER_LIVING_EXHAUST_3 200.0
 #define NTP_UPDATE_INTERVAL 3600000UL  // 1 ura v ms
 #define NTP_SERVER_COUNT 3
 #define DND_START_HOUR 22
