@@ -58,10 +58,10 @@ const bool useNVS = true; // true za produkcijo
 #define PIN_I2C_SDA 48
 #define PIN_I2C_SCL 47
 // SD card pins
-#define SD_CS_PIN 5
-#define SD_MOSI_PIN 23
-#define SD_MISO_PIN 19
-#define SD_SCK_PIN 4
+#define SD_CS_PIN 4
+#define SD_MOSI_PIN 6
+#define SD_MISO_PIN 5
+#define SD_SCK_PIN 7
 #define BME280_ADDRESS 0x76
 #define SHT41_ADDRESS 0x44
 #define I2C_TIMEOUT_MS 50
@@ -85,7 +85,7 @@ const bool useNVS = true; // true za produkcijo
 #define FAN_POWER_LIVING_EXHAUST_2 150.0
 #define FAN_POWER_LIVING_EXHAUST_3 200.0
 #define NTP_UPDATE_INTERVAL 3600000UL  // 1 ura v ms
-#define NTP_SERVER_COUNT 3
+#define NTP_SERVER_COUNT 4
 #define DND_START_HOUR 22
 #define DND_START_MIN 0
 #define DND_END_HOUR 6

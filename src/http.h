@@ -9,6 +9,10 @@ bool sendDewUpdate(const char* room);
 bool sendLogsToREW();
 void checkAndSendStatusUpdate();
 
+// Device status checking
+bool checkDeviceOnline(const char* ip);
+void checkAllDevices();
+
 // Helper functions
 bool sendHttpPost(const char* url, const String& jsonData, int timeoutMs = 5000);
 bool sendHttpPostWithRetry(const char* url, const String& jsonData, int maxRetries = 3);

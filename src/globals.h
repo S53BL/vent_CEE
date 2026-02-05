@@ -39,4 +39,13 @@ extern const char* ntpServers[];
 extern bool externalDataValid;
 extern uint32_t lastSensorDataTime;
 
+// Device status tracking
+struct DeviceStatus {
+    bool isOnline;
+};
+
+extern DeviceStatus rewStatus;
+extern DeviceStatus utDewStatus;
+extern DeviceStatus kopDewStatus;
+
 #endif // GLOBALS_H

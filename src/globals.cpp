@@ -4,8 +4,8 @@
 #include <Preferences.h>
 #include <ezTime.h>
 
-// NTP servers definition
-const char* ntpServers[] = {"pool.ntp.org", "time.nist.gov", "time.google.com"};
+// NTP servers definition - router first, then internet servers
+const char* ntpServers[] = {"192.168.2.1", "pool.ntp.org", "time.nist.gov", "time.google.com"};
 
 // Time management globals
 Timezone myTZ;
@@ -14,6 +14,11 @@ bool timeSynced = false;
 // External data validation
 bool externalDataValid = false;
 uint32_t lastSensorDataTime = 0;
+
+// Device status tracking
+DeviceStatus rewStatus = {false};
+DeviceStatus utDewStatus = {false};
+DeviceStatus kopDewStatus = {false};
 
 ExternalData externalData;
 Settings settings;

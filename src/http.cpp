@@ -154,14 +154,32 @@ void checkAndSendStatusUpdate() {
     }
     lastEnergyUpdate = now;
 
-    // Send STATUS_UPDATE
-    bool success = sendStatusUpdate();
+    // Send STATUS_UPDATE only if REW is online
+    bool success = false;
+    if (rewStatus.isOnline) {
+        success = sendStatusUpdate();
+        if (!success) {
+            rewStatus.isOnline = false;
+            LOG_WARN("HTTP", "REW marked offline due to STATUS_UPDATE failure");
+        }
+    }
 
-    // Send DEW updates regardless of STATUS_UPDATE success/failure
-    sendDewUpdate("UT");
-    sendDewUpdate("KOP");
+    // Send DEW updates only if devices are online
+    if (utDewStatus.isOnline) {
+        if (!sendDewUpdate("UT")) {
+            utDewStatus.isOnline = false;
+            LOG_WARN("HTTP", "UT_DEW marked offline due to DEW_UPDATE failure");
+        }
+    }
 
-    // Update last states and timestamp only if successful
+    if (kopDewStatus.isOnline) {
+        if (!sendDewUpdate("KOP")) {
+            kopDewStatus.isOnline = false;
+            LOG_WARN("HTTP", "KOP_DEW marked offline due to DEW_UPDATE failure");
+        }
+    }
+
+    // Update last states and timestamp only if STATUS_UPDATE successful
     if (success) {
         lastFanWc = currentFanWc;
         lastFanUt = currentFanUt;
@@ -229,4 +247,53 @@ bool sendHttpPostWithRetry(const char* url, const String& jsonData, int maxRetri
 
     LOG_ERROR("HTTP", "All %d attempts failed for %s", maxRetries, url);
     return false;
+}
+
+// Check if a device is online by pinging its /api/ping endpoint
+bool checkDeviceOnline(const char* ip) {
+    String url = String("http://") + ip + "/api/ping";
+    HTTPClient http;
+    http.begin(url);
+    http.setTimeout(2000); // 2 second timeout
+
+    int httpResponseCode = http.GET();
+
+    if (httpResponseCode == 200) {
+        String response = http.getString();
+        if (response == "pong") {
+            http.end();
+            return true;
+        }
+    }
+
+    http.end();
+    return false;
+}
+
+// Check all devices that are currently offline
+void checkAllDevices() {
+    LOG_INFO("HTTP", "Checking offline devices...");
+
+    if (!rewStatus.isOnline) {
+        if (checkDeviceOnline("192.168.2.190")) {
+            rewStatus.isOnline = true;
+            LOG_INFO("HTTP", "REW (192.168.2.190) is now online");
+        }
+    }
+
+    if (!utDewStatus.isOnline) {
+        if (checkDeviceOnline("192.168.2.193")) {
+            utDewStatus.isOnline = true;
+            LOG_INFO("HTTP", "UT_DEW (192.168.2.193) is now online");
+        }
+    }
+
+    if (!kopDewStatus.isOnline) {
+        if (checkDeviceOnline("192.168.2.194")) {
+            kopDewStatus.isOnline = true;
+            LOG_INFO("HTTP", "KOP_DEW (192.168.2.194) is now online");
+        }
+    }
+
+    LOG_INFO("HTTP", "Device check complete");
 }

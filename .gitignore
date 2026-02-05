@@ -45,6 +45,8 @@ __pycache__/
 *.docx
 *.doc
 *.txt
+*.pdf
+*.png
 .DS_Store
 Thumbs.db
 

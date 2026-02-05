@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <WiFi.h>
+#include <WiFiUdp.h>
 #include <ETHClass2.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
@@ -150,10 +151,45 @@ void onNTPUpdate() {
 }
 
 void setupNTP() {
+    // Synchronous mode
     myTZ.setPosix(TZ_STRING);
-    events();
-    setInterval(NTP_UPDATE_INTERVAL / 1000);
-    Serial.println("NTP: Timezone set to CET/CEST - asynchronous mode enabled");
+    Serial.println("NTP: Timezone set to CET/CEST - synchronous mode enabled");
+}
+
+// NTP UDP implementation
+WiFiUDP ntpUDP;
+const int NTP_BUFFER_SIZE = 48;
+byte packetBuffer[NTP_BUFFER_SIZE];
+
+bool sendNTPpacket(const char* address) {
+    // Initialize NTP UDP
+    ntpUDP.begin(8888); // Local port
+
+    // Set all bytes in the buffer to 0
+    memset(packetBuffer, 0, NTP_BUFFER_SIZE);
+
+    // Initialize values needed to form NTP request
+    packetBuffer[0] = 0b11100011;   // LI, Version, Mode
+    packetBuffer[1] = 0;     // Stratum, or type of clock
+    packetBuffer[2] = 6;     // Polling Interval
+    packetBuffer[3] = 0xEC;  // Peer Clock Precision
+    // 8 bytes of zero for Root Delay & Root Dispersion
+    packetBuffer[12] = 49;
+    packetBuffer[13] = 0x4E;
+    packetBuffer[14] = 49;
+    packetBuffer[15] = 52;
+
+    // Send packet
+    if (ntpUDP.beginPacket(address, 123) == 1) {
+        ntpUDP.write(packetBuffer, NTP_BUFFER_SIZE);
+        if (ntpUDP.endPacket() == 1) {
+            Serial.printf("NTP: Sent NTP packet to %s\n", address);
+            return true;
+        }
+    }
+
+    Serial.printf("NTP: Failed to send NTP packet to %s\n", address);
+    return false;
 }
 
 bool syncNTP() {
@@ -163,28 +199,74 @@ bool syncNTP() {
         return false;
     }
 
+    // Debug DNS
+    Serial.printf("NTP: DNS IP: %s\n", ETH.dnsIP().toString().c_str());
+
     Serial.println("NTP: Starting NTP sync with servers:");
-    for (int i = 0; i < NTP_SERVER_COUNT; i++) {
-        Serial.printf("NTP: Trying server %d: %s\n", i+1, ntpServers[i]);
+    const char* additionalServers[] = {"0.europe.pool.ntp.org", "time.cloudflare.com"};
+    const int totalServers = NTP_SERVER_COUNT + 2;
 
-        setServer(ntpServers[i]);
-        updateNTP();
-        delay(2000); // Wait for NTP response
-
-        // Check if time is now valid (ezTime sets time after successful sync)
-        if (myTZ.now() > 1609459200) { // Check if time is after 2021-01-01 (reasonable check)
-            Serial.printf("NTP: SUCCESS with %s\n", ntpServers[i]);
-            Serial.printf("NTP: Current time: %s\n", myTZ.dateTime().c_str());
-            timeSynced = true;
-            return true;
+    for (int i = 0; i < totalServers; i++) {
+        const char* server;
+        if (i < NTP_SERVER_COUNT) {
+            server = ntpServers[i];
         } else {
-            Serial.printf("NTP: FAILED with %s (invalid time)\n", ntpServers[i]);
+            server = additionalServers[i - NTP_SERVER_COUNT];
+        }
+
+        Serial.printf("NTP: Trying server %d: %s\n", i+1, server);
+
+        // Send NTP packet
+        if (sendNTPpacket(server)) {
+            // Wait for response
+            delay(1000);
+
+            if (ntpUDP.parsePacket()) {
+                Serial.println("NTP: Received NTP response");
+                ntpUDP.read(packetBuffer, NTP_BUFFER_SIZE);
+
+                // Parse NTP time
+                unsigned long highWord = word(packetBuffer[40], packetBuffer[41]);
+                unsigned long lowWord = word(packetBuffer[42], packetBuffer[43]);
+                unsigned long secsSince1900 = highWord << 16 | lowWord;
+
+                Serial.printf("NTP: Seconds since Jan 1 1900 = %lu\n", secsSince1900);
+
+                // Convert to Unix time
+                const unsigned long seventyYears = 2208988800UL;
+                unsigned long epoch = secsSince1900 - seventyYears;
+
+                Serial.printf("NTP: Unix time = %lu\n", epoch);
+
+                if (epoch > 1609459200) { // Check if time is after 2021-01-01
+                    // Set system time
+                    struct timeval tv;
+                    tv.tv_sec = epoch;
+                    tv.tv_usec = 0;
+                    settimeofday(&tv, NULL);
+
+                    // Update ezTime
+                    myTZ.setTime(epoch);
+
+                    Serial.printf("NTP: SUCCESS with %s\n", server);
+                    Serial.printf("NTP: Current time: %s\n", myTZ.dateTime().c_str());
+                    timeSynced = true;
+                    return true;
+                } else {
+                    Serial.printf("NTP: FAILED with %s (invalid time: %lu)\n", server, epoch);
+                }
+            } else {
+                Serial.printf("NTP: No response from %s\n", server);
+            }
+        } else {
+            Serial.printf("NTP: Failed to send packet to %s\n", server);
         }
 
         delay(1000); // Small delay between attempts
     }
 
     Serial.println("NTP: All servers failed - time not synchronized");
+    Serial.println("NTP: Possible causes: Firewall blocking UDP port 123, DNS issues, or network restrictions");
     timeSynced = false;
     return false;
 }
@@ -308,6 +390,9 @@ void setup() {
 
     // Setup and start web server
     setupServer();
+
+    // Initial device status check
+    checkAllDevices();
 }
 
 void loop() {
@@ -348,13 +433,6 @@ void loop() {
     // Check and send STATUS_UPDATE to REW
     checkAndSendStatusUpdate();
 
-    // NTP status check - ezTime handles synchronization asynchronously
-    if (!timeSynced && timeStatus() == timeSet) {
-        timeSynced = true;
-        Serial.println("NTP: Time synchronized successfully");
-        Serial.printf("NTP: Current time: %s\n", myTZ.dateTime().c_str());
-    }
-
     // Check REW sensor data timeout
     static unsigned long lastDataTimeoutCheck = 0;
     if (timeSynced && externalDataValid && now - lastDataTimeoutCheck > 300000) {  // Check every 5 minutes
@@ -363,6 +441,14 @@ void loop() {
             LOG_ERROR("HTTP", "REW sensor data timeout - no data for 15+ minutes, invalidating external data");
             externalDataValid = false;
         }
+    }
+
+    // Periodic device status check - every 5 minutes
+    static unsigned long lastDeviceCheck = 0;
+    const unsigned long DEVICE_CHECK_INTERVAL = 300000; // 5 minutes
+    if (now - lastDeviceCheck > DEVICE_CHECK_INTERVAL) {
+        lastDeviceCheck = now;
+        checkAllDevices();
     }
 
     // Periodic network retry - every 5 minutes if no network
