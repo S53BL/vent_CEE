@@ -4,8 +4,8 @@
 #include <Preferences.h>
 #include <ezTime.h>
 
-// NTP servers definition - router first, then internet servers
-const char* ntpServers[] = {"192.168.2.1", "pool.ntp.org", "time.nist.gov", "time.google.com"};
+// NTP servers definition - internet servers only
+const char* ntpServers[] = {"pool.ntp.org", "time.nist.gov", "time.google.com"};
 
 // Time management globals
 Timezone myTZ;
@@ -54,6 +54,7 @@ void initDefaults() {
   settings.humThreshold = 60.0f;
   settings.fanDuration = 180;
   settings.fanOffDuration = 1200;
+  settings.fanOffDurationKop = 1200;
   settings.tempLowThreshold = 5.0f;
   settings.tempMinThreshold = -10.0f;
   settings.dndAllowableAutomatic = true;
@@ -99,6 +100,7 @@ void loadSettings() {
   settings.humThreshold = prefs.getFloat("humThreshold", 60.0f);
   settings.fanDuration = prefs.getUInt("fanDuration", 180);
   settings.fanOffDuration = prefs.getUInt("fanOffDuration", 1200);
+  settings.fanOffDurationKop = prefs.getUInt("fanOffDurationKop", 1200);
   settings.tempLowThreshold = prefs.getFloat("tempLowThreshold", 5.0f);
   settings.tempMinThreshold = prefs.getFloat("tempMinThreshold", -10.0f);
   settings.dndAllowableAutomatic = prefs.getBool("dndAllowableAutomatic", true);
@@ -131,6 +133,7 @@ void saveSettings() {
   prefs.putFloat("humThreshold", settings.humThreshold);
   prefs.putUInt("fanDuration", settings.fanDuration);
   prefs.putUInt("fanOffDuration", settings.fanOffDuration);
+  prefs.putUInt("fanOffDurationKop", settings.fanOffDurationKop);
   prefs.putFloat("tempLowThreshold", settings.tempLowThreshold);
   prefs.putFloat("tempMinThreshold", settings.tempMinThreshold);
   prefs.putBool("dndAllowableAutomatic", settings.dndAllowableAutomatic);

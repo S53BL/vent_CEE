@@ -73,7 +73,7 @@ const bool useNVS = true; // true za produkcijo
 #define ERR_SHT41 0x02
 #define ERR_LITTLEFS 0x04
 #define ERR_HTTP 0x20
-#define TZ_STRING "CET-1CEST,M3.5.0,M10.5.0/3"  // POSIX za CET
+#define TZ_STRING "CET-1CEST,M3.5.0/2,M10.5.0/3"  // POSIX za CET
 
 // Fan power consumption values (Watts)
 #define FAN_POWER_BATHROOM 20.0
@@ -85,7 +85,7 @@ const bool useNVS = true; // true za produkcijo
 #define FAN_POWER_LIVING_EXHAUST_2 150.0
 #define FAN_POWER_LIVING_EXHAUST_3 200.0
 #define NTP_UPDATE_INTERVAL 3600000UL  // 1 ura v ms
-#define NTP_SERVER_COUNT 4
+#define NTP_SERVER_COUNT 3
 #define DND_START_HOUR 22
 #define DND_START_MIN 0
 #define DND_END_HOUR 6
@@ -104,6 +104,7 @@ struct Settings {
     float humThreshold = 60.0;
     uint16_t fanDuration = 180;
     uint16_t fanOffDuration = 1200;
+    uint16_t fanOffDurationKop = 1200;
     float tempLowThreshold = 5.0;
     float tempMinThreshold = -10.0;
     bool dndAllowableAutomatic = true;

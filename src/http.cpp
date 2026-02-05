@@ -238,8 +238,8 @@ bool sendHttpPostWithRetry(const char* url, const String& jsonData, int maxRetri
         }
 
         if (attempt < maxRetries) {
-            // Exponential backoff: 1s, 2s, 4s
-            int delayMs = 1000 * (1 << (attempt - 1));
+            // Delay before second attempt: 2s
+            int delayMs = 2000;
             LOG_INFO("HTTP", "Retrying in %d ms", delayMs);
             delay(delayMs);
         }

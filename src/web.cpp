@@ -4,6 +4,7 @@
 #include "globals.h"
 #include "logging.h"
 #include "html.h"
+#include "system.h"
 
 AsyncWebServer server(80);
 
@@ -25,10 +26,13 @@ void handleDataRequest(AsyncWebServerRequest *request) {
   prefs.begin("vent", true);
 
   String json = "{" +
+                String("\"CURRENT_TIME\":\"") + String(myTZ.dateTime().c_str()) + "\"," +
+                String("\"IS_DND\":") + String(isDNDTime() ? "true" : "false") + "," +
+                String("\"IS_NND\":") + String(isNNDTime() ? "true" : "false") + "," +
                 String("\"HUM_THRESHOLD\":\"") + String((int)prefs.getFloat("humThreshold", 60.0f)) + "\"," +
                 String("\"FAN_DURATION\":\"") + String(prefs.getUInt("fanDuration", 180)) + "\"," +
                 String("\"FAN_OFF_DURATION\":\"") + String(prefs.getUInt("fanOffDuration", 1200)) + "\"," +
-                String("\"FAN_OFF_DURATION_KOP\":\"") + String(prefs.getUInt("fanOffDuration", 1200)) + "\"," +
+                String("\"FAN_OFF_DURATION_KOP\":\"") + String(prefs.getUInt("fanOffDurationKop", 1200)) + "\"," +
                 String("\"TEMP_LOW_THRESHOLD\":\"") + String((int)prefs.getFloat("tempLowThreshold", 5.0f)) + "\"," +
                 String("\"TEMP_MIN_THRESHOLD\":\"") + String((int)prefs.getFloat("tempMinThreshold", -10.0f)) + "\"," +
                 String("\"DND_ALLOW_AUTOMATIC\":") + String(prefs.getBool("dndAllowableAutomatic", true) ? "true" : "false") + "," +
@@ -76,6 +80,7 @@ void handlePostSettings(AsyncWebServerRequest *request) {
   newSettings.humThreshold = request->getParam("humThreshold", true)->value().toFloat();
   newSettings.fanDuration = request->getParam("fanDuration", true)->value().toInt();
   newSettings.fanOffDuration = request->getParam("fanOffDuration", true)->value().toInt();
+  newSettings.fanOffDurationKop = request->getParam("fanOffDurationKop", true)->value().toInt();
   newSettings.tempLowThreshold = request->getParam("tempLowThreshold", true)->value().toFloat();
   newSettings.tempMinThreshold = request->getParam("tempMinThreshold", true)->value().toFloat();
   newSettings.dndAllowableAutomatic = request->hasParam("dndAllowAutomatic", true);
@@ -146,8 +151,8 @@ void handlePostSettings(AsyncWebServerRequest *request) {
   // Ponovno naloži iz NVS v RAM za zagotovitev sinhronizacije
   loadSettings();
 
-  LOG_INFO("Web", "Nastavitve shranjene: humThreshold=%.1f, fanDuration=%d, tempLowThreshold=%.1f",
-           newSettings.humThreshold, newSettings.fanDuration, newSettings.tempLowThreshold);
+  LOG_INFO("Web", "Nastavitve shranjene: humThreshold=%.1f, fanDuration=%d, fanOffDuration=%d, fanOffDurationKop=%d, tempLowThreshold=%.1f",
+           newSettings.humThreshold, newSettings.fanDuration, newSettings.fanOffDuration, newSettings.fanOffDurationKop, newSettings.tempLowThreshold);
 
   settingsUpdateSuccess = true;
   settingsUpdateMessage = "Nastavitve shranjene!";

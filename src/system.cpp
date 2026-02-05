@@ -9,9 +9,7 @@
 bool isDNDTime() {
     if (!timeSynced) return false;  // Vedno dovoljeno če ni časa
 
-    time_t now = myTZ.now();  // Unix time
-    struct tm* tm = localtime(&now);  // Convert to local time
-    int hour = tm->tm_hour;
+    int hour = myTZ.hour();  // Lokalna ura
 
     // DND: 22:00 - 06:00
     return (hour >= 22 || hour < 6);
@@ -20,10 +18,8 @@ bool isDNDTime() {
 bool isNNDTime() {
     if (!timeSynced) return false;  // Vedno dovoljeno če ni časa
 
-    time_t now = myTZ.now();
-    struct tm* tm = localtime(&now);
-    int hour = tm->tm_hour;
-    int day = tm->tm_wday;  // 0=Sunday, 1=Monday, ..., 6=Saturday
+    int hour = myTZ.hour();  // Lokalna ura
+    int day = myTZ.weekday() - 1;  // 0=Ned, 1=Pon, ..., 6=Sob
 
     // NND: 06:00 - 16:00 only on workdays (Mon-Fri)
     // NND_DAYS = {true, true, true, true, true, false, false}

@@ -246,7 +246,10 @@ bool syncNTP() {
                     settimeofday(&tv, NULL);
 
                     // Update ezTime
-                    myTZ.setTime(epoch);
+                    setTime(epoch);  // global funkcija ezTime, nastavi internal UTC čas
+
+                    Serial.printf("UTC: %s\n", UTC.dateTime().c_str());
+                    Serial.printf("Local: %s\n", myTZ.dateTime().c_str());
 
                     Serial.printf("NTP: SUCCESS with %s\n", server);
                     Serial.printf("NTP: Current time: %s\n", myTZ.dateTime().c_str());

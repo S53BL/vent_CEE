@@ -126,6 +126,7 @@ const char index_html[] PROGMEM = R"rawliteral(
 </head>
 <body>
     <h1>Ventilacijski sistem - Nastavitve</h1>
+    <div id="timeDisplay" style="text-align: center; margin: 10px 0; font-size: 16px; color: #4da6ff;"></div>
     <div class="tab">
         <button class="tablinks active" onclick="openTab(event, 'Settings')">Nastavitve</button>
         <button class="tablinks" onclick="openTab(event, 'Help')">Pomoč</button>
@@ -351,6 +352,10 @@ const char index_html[] PROGMEM = R"rawliteral(
             fetch("/data")
                 .then(response => response.json())
                 .then(data => {
+                    // Update time display
+                    const timeDisplay = document.getElementById("timeDisplay");
+                    timeDisplay.textContent = `Trenutni čas: ${data.CURRENT_TIME} | DND: ${data.IS_DND} | NND: ${data.IS_NND}`;
+
                     document.getElementById("humThreshold").value = data.HUM_THRESHOLD;
                     document.getElementById("fanDuration").value = data.FAN_DURATION;
                     document.getElementById("fanOffDuration").value = data.FAN_OFF_DURATION;
