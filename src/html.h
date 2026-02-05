@@ -138,7 +138,7 @@ const char index_html[] PROGMEM = R"rawliteral(
                 <div class="success" id="success-message"></div>
                 <div class="button-group">
                     <input type="button" value="Shrani" class="submit-btn" onclick="saveSettings()">
-                    <input type="button" value="Ponastavi na privzeto" class="submit-btn reset-btn" onclick="resetSettings()">
+                    <input type="button" value="Razveljavi spremembe" class="submit-btn reset-btn" onclick="updateSettings()">
                 </div>
                 <table>
                     <tr>
@@ -179,7 +179,7 @@ const char index_html[] PROGMEM = R"rawliteral(
                     </tr>
                     <tr>
                         <td>DND dovoli ročno upravljanje</td>
-                        <td><input type="checkbox" name="dndAllowManual" id="dndAllowManual"></td>
+                        <td><input type="checkbox" name="dndAllowManual" id="dndAllowManual" checked></td>
                     </tr>
                     <tr>
                         <td>Trajanje cikla Dnevni prostor (60–6000 s)</td>
@@ -362,9 +362,9 @@ const char index_html[] PROGMEM = R"rawliteral(
                     document.getElementById("fanOffDurationKop").value = data.FAN_OFF_DURATION_KOP;
                     document.getElementById("tempLowThreshold").value = data.TEMP_LOW_THRESHOLD;
                     document.getElementById("tempMinThreshold").value = data.TEMP_MIN_THRESHOLD;
-                    document.getElementById("dndAllowAutomatic").checked = data.DND_ALLOW_AUTOMATIC === "true";
-                    document.getElementById("dndAllowSemiautomatic").checked = data.DND_ALLOW_SEMIAUTOMATIC === "true";
-                    document.getElementById("dndAllowManual").checked = data.DND_ALLOW_MANUAL === "true";
+                    document.getElementById("dndAllowAutomatic").checked = data.DND_ALLOW_AUTOMATIC;
+                    document.getElementById("dndAllowSemiautomatic").checked = data.DND_ALLOW_SEMIAUTOMATIC;
+                    document.getElementById("dndAllowManual").checked = data.DND_ALLOW_MANUAL;
                     document.getElementById("cycleDurationDS").value = data.CYCLE_DURATION_DS;
                     document.getElementById("cycleActivePercentDS").value = data.CYCLE_ACTIVE_PERCENT_DS;
                     document.getElementById("humThresholdDS").value = data.HUM_THRESHOLD_DS;
@@ -383,8 +383,30 @@ const char index_html[] PROGMEM = R"rawliteral(
         }
 
         function saveSettings() {
-            var form = document.getElementById("settingsForm");
-            var formData = new FormData(form);
+            var formData = new FormData();
+            formData.append('humThreshold', document.getElementById('humThreshold').value);
+            formData.append('fanDuration', document.getElementById('fanDuration').value);
+            formData.append('fanOffDuration', document.getElementById('fanOffDuration').value);
+            formData.append('fanOffDurationKop', document.getElementById('fanOffDurationKop').value);
+            formData.append('tempLowThreshold', document.getElementById('tempLowThreshold').value);
+            formData.append('tempMinThreshold', document.getElementById('tempMinThreshold').value);
+            formData.append('dndAllowAutomatic', document.getElementById('dndAllowAutomatic').checked ? 'true' : 'false');
+            formData.append('dndAllowSemiautomatic', document.getElementById('dndAllowSemiautomatic').checked ? 'true' : 'false');
+            formData.append('dndAllowManual', document.getElementById('dndAllowManual').checked ? 'true' : 'false');
+            formData.append('cycleDurationDS', document.getElementById('cycleDurationDS').value);
+            formData.append('cycleActivePercentDS', document.getElementById('cycleActivePercentDS').value);
+            formData.append('humThresholdDS', document.getElementById('humThresholdDS').value);
+            formData.append('humThresholdHighDS', document.getElementById('humThresholdHighDS').value);
+            formData.append('humExtremeHighDS', document.getElementById('humExtremeHighDS').value);
+            formData.append('co2ThresholdLowDS', document.getElementById('co2ThresholdLowDS').value);
+            formData.append('co2ThresholdHighDS', document.getElementById('co2ThresholdHighDS').value);
+            formData.append('incrementPercentLowDS', document.getElementById('incrementPercentLowDS').value);
+            formData.append('incrementPercentHighDS', document.getElementById('incrementPercentHighDS').value);
+            formData.append('incrementPercentTempDS', document.getElementById('incrementPercentTempDS').value);
+            formData.append('tempIdealDS', document.getElementById('tempIdealDS').value);
+            formData.append('tempExtremeHighDS', document.getElementById('tempExtremeHighDS').value);
+            formData.append('tempExtremeLowDS', document.getElementById('tempExtremeLowDS').value);
+
             document.getElementById("error-message").textContent = "";
             document.getElementById("success-message").textContent = "";
             fetch("/settings/update", { method: "POST", body: formData })

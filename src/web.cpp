@@ -35,9 +35,9 @@ void handleDataRequest(AsyncWebServerRequest *request) {
                 String("\"FAN_OFF_DURATION_KOP\":\"") + String(prefs.getUInt("fanOffDurationKop", 1200)) + "\"," +
                 String("\"TEMP_LOW_THRESHOLD\":\"") + String((int)prefs.getFloat("tempLowThreshold", 5.0f)) + "\"," +
                 String("\"TEMP_MIN_THRESHOLD\":\"") + String((int)prefs.getFloat("tempMinThreshold", -10.0f)) + "\"," +
-                String("\"DND_ALLOW_AUTOMATIC\":") + String(prefs.getBool("dndAllowableAutomatic", true) ? "true" : "false") + "," +
-                String("\"DND_ALLOW_SEMIAUTOMATIC\":") + String(prefs.getBool("dndAllowableSemiautomatic", true) ? "true" : "false") + "," +
-                String("\"DND_ALLOW_MANUAL\":") + String(prefs.getBool("dndAllowableManual", true) ? "true" : "false") + "," +
+                String("\"DND_ALLOW_AUTOMATIC\":") + String(prefs.getUChar("dndAllowableAutomatic", 1) != 0 ? "true" : "false") + "," +
+                String("\"DND_ALLOW_SEMIAUTOMATIC\":") + String(prefs.getUChar("dndAllowableSemiautomatic", 1) != 0 ? "true" : "false") + "," +
+                String("\"DND_ALLOW_MANUAL\":") + String(prefs.getUChar("dndAllowableManual", 1) != 0 ? "true" : "false") + "," +
                 String("\"CYCLE_DURATION_DS\":\"") + String(prefs.getUInt("cycleDurationDS", 60)) + "\"," +
                 String("\"CYCLE_ACTIVE_PERCENT_DS\":\"") + String((int)prefs.getFloat("cycleActivePercentDS", 30.0f)) + "\"," +
                 String("\"HUM_THRESHOLD_DS\":\"") + String((int)prefs.getFloat("humThresholdDS", 60.0f)) + "\"," +
@@ -83,9 +83,9 @@ void handlePostSettings(AsyncWebServerRequest *request) {
   newSettings.fanOffDurationKop = request->getParam("fanOffDurationKop", true)->value().toInt();
   newSettings.tempLowThreshold = request->getParam("tempLowThreshold", true)->value().toFloat();
   newSettings.tempMinThreshold = request->getParam("tempMinThreshold", true)->value().toFloat();
-  newSettings.dndAllowableAutomatic = request->hasParam("dndAllowAutomatic", true);
-  newSettings.dndAllowableSemiautomatic = request->hasParam("dndAllowSemiautomatic", true);
-  newSettings.dndAllowableManual = request->hasParam("dndAllowManual", true);
+  newSettings.dndAllowableAutomatic = request->getParam("dndAllowAutomatic", true)->value() == "true";
+  newSettings.dndAllowableSemiautomatic = request->getParam("dndAllowSemiautomatic", true)->value() == "true";
+  newSettings.dndAllowableManual = request->getParam("dndAllowManual", true)->value() == "true";
   newSettings.cycleDurationDS = request->getParam("cycleDurationDS", true)->value().toInt();
   newSettings.cycleActivePercentDS = request->getParam("cycleActivePercentDS", true)->value().toFloat();
   newSettings.humThresholdDS = request->getParam("humThresholdDS", true)->value().toFloat();
@@ -151,8 +151,7 @@ void handlePostSettings(AsyncWebServerRequest *request) {
   // Ponovno naloži iz NVS v RAM za zagotovitev sinhronizacije
   loadSettings();
 
-  LOG_INFO("Web", "Nastavitve shranjene: humThreshold=%.1f, fanDuration=%d, fanOffDuration=%d, fanOffDurationKop=%d, tempLowThreshold=%.1f",
-           newSettings.humThreshold, newSettings.fanDuration, newSettings.fanOffDuration, newSettings.fanOffDurationKop, newSettings.tempLowThreshold);
+  LOG_INFO("Web", "Nastavitve shranjene");
 
   settingsUpdateSuccess = true;
   settingsUpdateMessage = "Nastavitve shranjene!";

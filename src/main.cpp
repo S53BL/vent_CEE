@@ -425,11 +425,7 @@ void loop() {
         lastVentControl = now;
     }
 
-    // Periodic log flushing
-    if (now - lastLogFlush >= 30000) {  // Every 30 seconds
-        flushLogBuffer();
-        lastLogFlush = now;
-    }
+
 
     // Check and send STATUS_UPDATE to REW
     checkAndSendStatusUpdate();
@@ -444,11 +440,13 @@ void loop() {
         }
     }
 
-    // Periodic device status check - every 5 minutes
+    // Periodic device status check and log maintenance - every 5 minutes
     static unsigned long lastDeviceCheck = 0;
     const unsigned long DEVICE_CHECK_INTERVAL = 300000; // 5 minutes
     if (now - lastDeviceCheck > DEVICE_CHECK_INTERVAL) {
         lastDeviceCheck = now;
+        LOG_DEBUG("System", "Log buffer size: %d bytes", logBuffer.length());
+        flushLogBuffer();
         checkAllDevices();
     }
 

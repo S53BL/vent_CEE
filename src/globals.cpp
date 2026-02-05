@@ -3,6 +3,8 @@
 #include "globals.h"
 #include <Preferences.h>
 #include <ezTime.h>
+#include <cstring>
+#include "logging.h"
 
 // NTP servers definition - internet servers only
 const char* ntpServers[] = {"pool.ntp.org", "time.nist.gov", "time.google.com"};
@@ -57,8 +59,8 @@ void initDefaults() {
   settings.fanOffDurationKop = 1200;
   settings.tempLowThreshold = 5.0f;
   settings.tempMinThreshold = -10.0f;
-  settings.dndAllowableAutomatic = true;
-  settings.dndAllowableSemiautomatic = true;
+  settings.dndAllowableAutomatic = false;
+  settings.dndAllowableSemiautomatic = false;
   settings.dndAllowableManual = true;
   settings.cycleDurationDS = 60;
   settings.cycleActivePercentDS = 30.0f;
@@ -79,6 +81,7 @@ void initDefaults() {
 void loadSettings() {
   if (!useNVS) {
     initDefaults();
+    LOG_INFO("Settings", "NVS onemogočen, uporabljene privzete nastavitve");
     return;
   }
 
@@ -88,12 +91,11 @@ void loadSettings() {
   // Preveri marker za validacijo podatkov
   uint8_t marker = prefs.getUChar("marker", 0);
   if (marker != SETTINGS_MARKER) {
-    // NVS prazen ali koruptiran - zapiši defaults
+    LOG_INFO("Settings", "Marker neveljaven (prebran: 0x%02X, pričakovan: 0x%02X) - uporabljene privzete nastavitve, shranjene v NVS", marker, SETTINGS_MARKER);
     prefs.end();
     initDefaults();
     saveSettings();
-    // Ponovno odpri za branje
-    prefs.begin("vent", true);
+    return;
   }
 
   // Preberi nastavitve iz NVS
@@ -103,9 +105,9 @@ void loadSettings() {
   settings.fanOffDurationKop = prefs.getUInt("fanOffDurationKop", 1200);
   settings.tempLowThreshold = prefs.getFloat("tempLowThreshold", 5.0f);
   settings.tempMinThreshold = prefs.getFloat("tempMinThreshold", -10.0f);
-  settings.dndAllowableAutomatic = prefs.getBool("dndAllowableAutomatic", true);
-  settings.dndAllowableSemiautomatic = prefs.getBool("dndAllowableSemiautomatic", true);
-  settings.dndAllowableManual = prefs.getBool("dndAllowableManual", true);
+  settings.dndAllowableAutomatic = prefs.getUChar("dndAllowableAutomatic", 1) != 0;
+  settings.dndAllowableSemiautomatic = prefs.getUChar("dndAllowableSemiautomatic", 1) != 0;
+  settings.dndAllowableManual = prefs.getUChar("dndAllowableManual", 1) != 0;
   settings.cycleDurationDS = prefs.getUInt("cycleDurationDS", 60);
   settings.cycleActivePercentDS = prefs.getFloat("cycleActivePercentDS", 30.0f);
   settings.humThresholdDS = prefs.getFloat("humThresholdDS", 60.0f);
@@ -121,7 +123,49 @@ void loadSettings() {
   settings.humExtremeHighDS = prefs.getFloat("humExtremeHighDS", 80.0f);
   settings.lastKnownUnixTime = prefs.getULong("lastKnownUnixTime", 0);
 
+  // Preberi shranjen CRC
+  uint16_t stored_crc = prefs.getUShort("settings_crc", 0);
   prefs.end();
+
+  // Izračunaj CRC prebranih nastavitev (na podlagi posameznih polj, ne struct memory)
+  // POZOR: Če se doda nova polja v Settings strukturo, jih je potrebno dodati tudi tukaj
+  // in v saveSettings() funkciji v ISTEM VRSTNEM REDU!
+  uint8_t crcData[sizeof(Settings)];
+  memset(crcData, 0, sizeof(crcData));
+  size_t offset = 0;
+  memcpy(crcData + offset, &settings.humThreshold, sizeof(settings.humThreshold)); offset += sizeof(settings.humThreshold);
+  memcpy(crcData + offset, &settings.fanDuration, sizeof(settings.fanDuration)); offset += sizeof(settings.fanDuration);
+  memcpy(crcData + offset, &settings.fanOffDuration, sizeof(settings.fanOffDuration)); offset += sizeof(settings.fanOffDuration);
+  memcpy(crcData + offset, &settings.fanOffDurationKop, sizeof(settings.fanOffDurationKop)); offset += sizeof(settings.fanOffDurationKop);
+  memcpy(crcData + offset, &settings.tempLowThreshold, sizeof(settings.tempLowThreshold)); offset += sizeof(settings.tempLowThreshold);
+  memcpy(crcData + offset, &settings.tempMinThreshold, sizeof(settings.tempMinThreshold)); offset += sizeof(settings.tempMinThreshold);
+  memcpy(crcData + offset, &settings.dndAllowableAutomatic, sizeof(settings.dndAllowableAutomatic)); offset += sizeof(settings.dndAllowableAutomatic);
+  memcpy(crcData + offset, &settings.dndAllowableSemiautomatic, sizeof(settings.dndAllowableSemiautomatic)); offset += sizeof(settings.dndAllowableSemiautomatic);
+  memcpy(crcData + offset, &settings.dndAllowableManual, sizeof(settings.dndAllowableManual)); offset += sizeof(settings.dndAllowableManual);
+  memcpy(crcData + offset, &settings.cycleDurationDS, sizeof(settings.cycleDurationDS)); offset += sizeof(settings.cycleDurationDS);
+  memcpy(crcData + offset, &settings.cycleActivePercentDS, sizeof(settings.cycleActivePercentDS)); offset += sizeof(settings.cycleActivePercentDS);
+  memcpy(crcData + offset, &settings.humThresholdDS, sizeof(settings.humThresholdDS)); offset += sizeof(settings.humThresholdDS);
+  memcpy(crcData + offset, &settings.humThresholdHighDS, sizeof(settings.humThresholdHighDS)); offset += sizeof(settings.humThresholdHighDS);
+  memcpy(crcData + offset, &settings.co2ThresholdLowDS, sizeof(settings.co2ThresholdLowDS)); offset += sizeof(settings.co2ThresholdLowDS);
+  memcpy(crcData + offset, &settings.co2ThresholdHighDS, sizeof(settings.co2ThresholdHighDS)); offset += sizeof(settings.co2ThresholdHighDS);
+  memcpy(crcData + offset, &settings.incrementPercentLowDS, sizeof(settings.incrementPercentLowDS)); offset += sizeof(settings.incrementPercentLowDS);
+  memcpy(crcData + offset, &settings.incrementPercentHighDS, sizeof(settings.incrementPercentHighDS)); offset += sizeof(settings.incrementPercentHighDS);
+  memcpy(crcData + offset, &settings.incrementPercentTempDS, sizeof(settings.incrementPercentTempDS)); offset += sizeof(settings.incrementPercentTempDS);
+  memcpy(crcData + offset, &settings.tempIdealDS, sizeof(settings.tempIdealDS)); offset += sizeof(settings.tempIdealDS);
+  memcpy(crcData + offset, &settings.tempExtremeHighDS, sizeof(settings.tempExtremeHighDS)); offset += sizeof(settings.tempExtremeHighDS);
+  memcpy(crcData + offset, &settings.tempExtremeLowDS, sizeof(settings.tempExtremeLowDS)); offset += sizeof(settings.tempExtremeLowDS);
+  memcpy(crcData + offset, &settings.humExtremeHighDS, sizeof(settings.humExtremeHighDS)); offset += sizeof(settings.humExtremeHighDS);
+  memcpy(crcData + offset, &settings.lastKnownUnixTime, sizeof(settings.lastKnownUnixTime)); offset += sizeof(settings.lastKnownUnixTime);
+
+  uint16_t calculated_crc = calculateCRC(crcData, offset);
+
+  if (calculated_crc != stored_crc) {
+    LOG_WARN("Settings", "CRC neustreza (izračunan: 0x%04X, shranjen: 0x%04X) - naložene in shranjene privzete nastavitve v NVS z novim CRC-jem", calculated_crc, stored_crc);
+    initDefaults();
+    saveSettings();
+  } else {
+    LOG_INFO("Settings", "Nastavitve uspešno naložene iz NVS-a (CRC: 0x%04X)", calculated_crc);
+  }
 }
 
 void saveSettings() {
@@ -136,9 +180,9 @@ void saveSettings() {
   prefs.putUInt("fanOffDurationKop", settings.fanOffDurationKop);
   prefs.putFloat("tempLowThreshold", settings.tempLowThreshold);
   prefs.putFloat("tempMinThreshold", settings.tempMinThreshold);
-  prefs.putBool("dndAllowableAutomatic", settings.dndAllowableAutomatic);
-  prefs.putBool("dndAllowableSemiautomatic", settings.dndAllowableSemiautomatic);
-  prefs.putBool("dndAllowableManual", settings.dndAllowableManual);
+  prefs.putUChar("dndAllowableAutomatic", settings.dndAllowableAutomatic ? 1 : 0);
+  prefs.putUChar("dndAllowableSemiautomatic", settings.dndAllowableSemiautomatic ? 1 : 0);
+  prefs.putUChar("dndAllowableManual", settings.dndAllowableManual ? 1 : 0);
   prefs.putUInt("cycleDurationDS", settings.cycleDurationDS);
   prefs.putFloat("cycleActivePercentDS", settings.cycleActivePercentDS);
   prefs.putFloat("humThresholdDS", settings.humThresholdDS);
@@ -153,6 +197,40 @@ void saveSettings() {
   prefs.putFloat("tempExtremeLowDS", settings.tempExtremeLowDS);
   prefs.putFloat("humExtremeHighDS", settings.humExtremeHighDS);
   prefs.putULong("lastKnownUnixTime", settings.lastKnownUnixTime);
+
+  // Izračunaj in shrani CRC za validacijo (na podlagi posameznih polj, ne struct memory)
+  // POZOR: Če se doda nova polja v Settings strukturo, jih je potrebno dodati tudi tukaj
+  // in v loadSettings() funkciji v ISTEM VRSTNEM REDU!
+  uint8_t crcData[sizeof(Settings)];
+  memset(crcData, 0, sizeof(crcData));
+  size_t offset = 0;
+  memcpy(crcData + offset, &settings.humThreshold, sizeof(settings.humThreshold)); offset += sizeof(settings.humThreshold);
+  memcpy(crcData + offset, &settings.fanDuration, sizeof(settings.fanDuration)); offset += sizeof(settings.fanDuration);
+  memcpy(crcData + offset, &settings.fanOffDuration, sizeof(settings.fanOffDuration)); offset += sizeof(settings.fanOffDuration);
+  memcpy(crcData + offset, &settings.fanOffDurationKop, sizeof(settings.fanOffDurationKop)); offset += sizeof(settings.fanOffDurationKop);
+  memcpy(crcData + offset, &settings.tempLowThreshold, sizeof(settings.tempLowThreshold)); offset += sizeof(settings.tempLowThreshold);
+  memcpy(crcData + offset, &settings.tempMinThreshold, sizeof(settings.tempMinThreshold)); offset += sizeof(settings.tempMinThreshold);
+  memcpy(crcData + offset, &settings.dndAllowableAutomatic, sizeof(settings.dndAllowableAutomatic)); offset += sizeof(settings.dndAllowableAutomatic);
+  memcpy(crcData + offset, &settings.dndAllowableSemiautomatic, sizeof(settings.dndAllowableSemiautomatic)); offset += sizeof(settings.dndAllowableSemiautomatic);
+  memcpy(crcData + offset, &settings.dndAllowableManual, sizeof(settings.dndAllowableManual)); offset += sizeof(settings.dndAllowableManual);
+  memcpy(crcData + offset, &settings.cycleDurationDS, sizeof(settings.cycleDurationDS)); offset += sizeof(settings.cycleDurationDS);
+  memcpy(crcData + offset, &settings.cycleActivePercentDS, sizeof(settings.cycleActivePercentDS)); offset += sizeof(settings.cycleActivePercentDS);
+  memcpy(crcData + offset, &settings.humThresholdDS, sizeof(settings.humThresholdDS)); offset += sizeof(settings.humThresholdDS);
+  memcpy(crcData + offset, &settings.humThresholdHighDS, sizeof(settings.humThresholdHighDS)); offset += sizeof(settings.humThresholdHighDS);
+  memcpy(crcData + offset, &settings.co2ThresholdLowDS, sizeof(settings.co2ThresholdLowDS)); offset += sizeof(settings.co2ThresholdLowDS);
+  memcpy(crcData + offset, &settings.co2ThresholdHighDS, sizeof(settings.co2ThresholdHighDS)); offset += sizeof(settings.co2ThresholdHighDS);
+  memcpy(crcData + offset, &settings.incrementPercentLowDS, sizeof(settings.incrementPercentLowDS)); offset += sizeof(settings.incrementPercentLowDS);
+  memcpy(crcData + offset, &settings.incrementPercentHighDS, sizeof(settings.incrementPercentHighDS)); offset += sizeof(settings.incrementPercentHighDS);
+  memcpy(crcData + offset, &settings.incrementPercentTempDS, sizeof(settings.incrementPercentTempDS)); offset += sizeof(settings.incrementPercentTempDS);
+  memcpy(crcData + offset, &settings.tempIdealDS, sizeof(settings.tempIdealDS)); offset += sizeof(settings.tempIdealDS);
+  memcpy(crcData + offset, &settings.tempExtremeHighDS, sizeof(settings.tempExtremeHighDS)); offset += sizeof(settings.tempExtremeHighDS);
+  memcpy(crcData + offset, &settings.tempExtremeLowDS, sizeof(settings.tempExtremeLowDS)); offset += sizeof(settings.tempExtremeLowDS);
+  memcpy(crcData + offset, &settings.humExtremeHighDS, sizeof(settings.humExtremeHighDS)); offset += sizeof(settings.humExtremeHighDS);
+  memcpy(crcData + offset, &settings.lastKnownUnixTime, sizeof(settings.lastKnownUnixTime)); offset += sizeof(settings.lastKnownUnixTime);
+
+  uint16_t crc = calculateCRC(crcData, offset);
+  prefs.putUShort("settings_crc", crc);
+
   prefs.end();
 }
 
