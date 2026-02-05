@@ -113,11 +113,11 @@ void initSensors() {
 
     // Log final status
     if (sht41Present && bmePresent) {
-        logEvent("All sensors initialized and tested successfully");
+        LOG_INFO("Sensors", "All sensors initialized and tested successfully");
     } else if (sht41Present || bmePresent) {
-        logEvent("Partial sensor initialization - some sensors failed testing");
+        LOG_WARN("Sensors", "Partial sensor initialization - some sensors failed testing");
     } else {
-        logEvent("No sensors available or failed testing");
+        LOG_WARN("Sensors", "No sensors available or failed testing");
     }
 }
 
@@ -148,9 +148,8 @@ bool readSensorWithRetry(
                 if (pressOut) *pressOut = press;
                 return true;
             } else {
-                snprintf(logMessage, sizeof(logMessage), "Invalid %s data: T=%.1f°C, H=%.1f%%, P=%.1fhPa",
+                LOG_WARN("Sensors", "Invalid %s data: T=%.1f°C, H=%.1f%%, P=%.1fhPa",
                         sensorName, temp, hum, press);
-                logEvent(logMessage);
                 return false;
             }
         }
@@ -173,17 +172,15 @@ bool readSensorWithRetry(
                 if (pressOut) *pressOut = press;
                 return true;
             } else {
-                snprintf(logMessage, sizeof(logMessage), "Invalid %s data after retry: T=%.1f°C, H=%.1f%%, P=%.1fhPa",
+                LOG_ERROR("Sensors", "Invalid %s data after retry: T=%.1f°C, H=%.1f%%, P=%.1fhPa",
                         sensorName, temp, hum, press);
-                logEvent(logMessage);
                 return false;
             }
         }
     }
 
     // Both attempts failed
-    snprintf(logMessage, sizeof(logMessage), "%s I2C error after reset", sensorName);
-    logEvent(logMessage);
+    LOG_ERROR("Sensors", "%s I2C error after reset", sensorName);
     return false;
 }
 
@@ -284,11 +281,9 @@ void resetI2CBus() {
     }
     // Check SDA
     if (digitalRead(PIN_I2C_SDA) == LOW) {
-        snprintf(logMessage, sizeof(logMessage), "[I2C] Error: SDA stuck low after bus recovery");
-        logEvent(logMessage);
+        LOG_ERROR("I2C", "Error: SDA stuck low after bus recovery");
     } else {
-        snprintf(logMessage, sizeof(logMessage), "[I2C] Bus recovery successful");
-        logEvent(logMessage);
+        LOG_INFO("I2C", "Bus recovery successful");
     }
     // Reinitialize I2C with slower speed for recovery
     Wire.setClock(10000); // 10 kHz
@@ -471,15 +466,13 @@ void readInputs() {
             } else {
                 event = currentState == LOW ? "WC Luč ON" : "WC Luč OFF";
             }
-            snprintf(logMessage, sizeof(logMessage), "[%s]", event);
-            logEvent(logMessage);
+            LOG_INFO("Inputs", "%s", event);
             lastInputStates[i] = currentState;
         }
     }
 
     if ((currentWindowOpen != lastWindowOpen) && (millis() - lastWindowLogTime >= LOG_REPEAT_INTERVAL)) {
-        snprintf(logMessage, sizeof(logMessage), "[Okna DS] %s", currentWindowOpen ? "Odprta" : "Zaprta");
-        logEvent(logMessage);
+        LOG_INFO("Inputs", "Okna DS: %s", currentWindowOpen ? "Odprta" : "Zaprta");
         lastWindowOpen = currentWindowOpen;
         lastWindowLogTime = millis();
     }

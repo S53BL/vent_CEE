@@ -42,13 +42,8 @@ void logEvent(LogLevel level, const char* tag, const char* format, ...) {
         case LOG_LEVEL_ERROR: levelStr = "ERROR"; break;
     }
 
-    if (level == LOG_LEVEL_INFO) {
-        // For INFO level, keep the simple format for backward compatibility
-        snprintf(fullMessage, sizeof(fullMessage), "[%s] %s", tag, message);
-    } else {
-        // For other levels, include the level
-        snprintf(fullMessage, sizeof(fullMessage), "[%s:%s] %s", tag, levelStr, message);
-    }
+    // Always include the level for consistency
+    snprintf(fullMessage, sizeof(fullMessage), "[%s:%s] %s", tag, levelStr, message);
 
     // Use the existing logEvent function to handle the rest
     logEvent(fullMessage);

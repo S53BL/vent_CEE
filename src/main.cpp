@@ -142,10 +142,10 @@ void handleSensorData(AsyncWebServerRequest *request) {
 void onNTPUpdate() {
     if (timeStatus() == timeSet) {
         timeSynced = true;
-        Serial.println("NTP: Time synchronized successfully");
-        Serial.printf("NTP: Current time: %s\n", myTZ.dateTime().c_str());
+        LOG_INFO("NTP", "Time synchronized successfully");
+        LOG_INFO("NTP", "Current time: %s", myTZ.dateTime().c_str());
     } else {
-        Serial.println("NTP: Sync failed");
+        LOG_ERROR("NTP", "Sync failed");
         timeSynced = false;
     }
 }
@@ -153,7 +153,7 @@ void onNTPUpdate() {
 void setupNTP() {
     // Synchronous mode
     myTZ.setPosix(TZ_STRING);
-    Serial.println("NTP: Timezone set to CET/CEST - synchronous mode enabled");
+    LOG_INFO("NTP", "Timezone set to CET/CEST - synchronous mode enabled");
 }
 
 // NTP UDP implementation
@@ -183,26 +183,26 @@ bool sendNTPpacket(const char* address) {
     if (ntpUDP.beginPacket(address, 123) == 1) {
         ntpUDP.write(packetBuffer, NTP_BUFFER_SIZE);
         if (ntpUDP.endPacket() == 1) {
-            Serial.printf("NTP: Sent NTP packet to %s\n", address);
+            LOG_DEBUG("NTP", "Sent NTP packet to %s", address);
             return true;
         }
     }
 
-    Serial.printf("NTP: Failed to send NTP packet to %s\n", address);
+    LOG_ERROR("NTP", "Failed to send NTP packet to %s", address);
     return false;
 }
 
 bool syncNTP() {
     if (ETH.localIP() == IPAddress(0, 0, 0, 0)) {
-        Serial.println("NTP: Ethernet not connected - cannot sync");
+        LOG_ERROR("NTP", "Ethernet not connected - cannot sync");
         timeSynced = false;
         return false;
     }
 
     // Debug DNS
-    Serial.printf("NTP: DNS IP: %s\n", ETH.dnsIP().toString().c_str());
+    LOG_DEBUG("NTP", "DNS IP: %s", ETH.dnsIP().toString().c_str());
 
-    Serial.println("NTP: Starting NTP sync with servers:");
+    LOG_INFO("NTP", "Starting NTP sync with servers");
     const char* additionalServers[] = {"0.europe.pool.ntp.org", "time.cloudflare.com"};
     const int totalServers = NTP_SERVER_COUNT + 2;
 
@@ -214,7 +214,7 @@ bool syncNTP() {
             server = additionalServers[i - NTP_SERVER_COUNT];
         }
 
-        Serial.printf("NTP: Trying server %d: %s\n", i+1, server);
+        LOG_INFO("NTP", "Trying server %d: %s", i+1, server);
 
         // Send NTP packet
         if (sendNTPpacket(server)) {
@@ -222,7 +222,7 @@ bool syncNTP() {
             delay(1000);
 
             if (ntpUDP.parsePacket()) {
-                Serial.println("NTP: Received NTP response");
+                LOG_DEBUG("NTP", "Received NTP response");
                 ntpUDP.read(packetBuffer, NTP_BUFFER_SIZE);
 
                 // Parse NTP time
@@ -230,13 +230,13 @@ bool syncNTP() {
                 unsigned long lowWord = word(packetBuffer[42], packetBuffer[43]);
                 unsigned long secsSince1900 = highWord << 16 | lowWord;
 
-                Serial.printf("NTP: Seconds since Jan 1 1900 = %lu\n", secsSince1900);
+                LOG_DEBUG("NTP", "Seconds since Jan 1 1900 = %lu", secsSince1900);
 
                 // Convert to Unix time
                 const unsigned long seventyYears = 2208988800UL;
                 unsigned long epoch = secsSince1900 - seventyYears;
 
-                Serial.printf("NTP: Unix time = %lu\n", epoch);
+                LOG_DEBUG("NTP", "Unix time = %lu", epoch);
 
                 if (epoch > 1609459200) { // Check if time is after 2021-01-01
                     // Set system time
@@ -248,28 +248,28 @@ bool syncNTP() {
                     // Update ezTime
                     setTime(epoch);  // global funkcija ezTime, nastavi internal UTC čas
 
-                    Serial.printf("UTC: %s\n", UTC.dateTime().c_str());
-                    Serial.printf("Local: %s\n", myTZ.dateTime().c_str());
+                    LOG_DEBUG("NTP", "UTC: %s", UTC.dateTime().c_str());
+                    LOG_DEBUG("NTP", "Local: %s", myTZ.dateTime().c_str());
 
-                    Serial.printf("NTP: SUCCESS with %s\n", server);
-                    Serial.printf("NTP: Current time: %s\n", myTZ.dateTime().c_str());
+                    LOG_INFO("NTP", "SUCCESS with %s", server);
+                    LOG_INFO("NTP", "Current time: %s", myTZ.dateTime().c_str());
                     timeSynced = true;
                     return true;
                 } else {
-                    Serial.printf("NTP: FAILED with %s (invalid time: %lu)\n", server, epoch);
+                    LOG_ERROR("NTP", "FAILED with %s (invalid time: %lu)", server, epoch);
                 }
             } else {
-                Serial.printf("NTP: No response from %s\n", server);
+                LOG_WARN("NTP", "No response from %s", server);
             }
         } else {
-            Serial.printf("NTP: Failed to send packet to %s\n", server);
+            LOG_ERROR("NTP", "Failed to send packet to %s", server);
         }
 
         delay(1000); // Small delay between attempts
     }
 
-    Serial.println("NTP: All servers failed - time not synchronized");
-    Serial.println("NTP: Possible causes: Firewall blocking UDP port 123, DNS issues, or network restrictions");
+    LOG_ERROR("NTP", "All servers failed - time not synchronized");
+    LOG_INFO("NTP", "Possible causes: Firewall blocking UDP port 123, DNS issues, or network restrictions");
     timeSynced = false;
     return false;
 }
@@ -312,20 +312,19 @@ void setupServer() {
 void onEvent(arduino_event_id_t event) {
     switch (event) {
         case ETH_START:
-            Serial.println("ETH Started");
+            LOG_INFO("ETH", "Started");
             break;
         case ETH_CONNECTED:
-            Serial.println("ETH Connected");
+            LOG_INFO("ETH", "Connected");
             break;
         case ETH_GOT_IP:
-            Serial.print("ETH IP: ");
-            Serial.println(ETH.localIP());
+            LOG_INFO("ETH", "IP: %s", ETH.localIP().toString().c_str());
             break;
         case ETH_DISCONNECTED:
-            Serial.println("ETH Disconnected");
+            LOG_WARN("ETH", "Disconnected");
             break;
         case ETH_STOP:
-            Serial.println("ETH Stopped");
+            LOG_WARN("ETH", "Stopped");
             break;
         default:
             break;
@@ -335,7 +334,10 @@ void onEvent(arduino_event_id_t event) {
 void setup() {
     Serial.begin(115200);
     delay(1000);
-    Serial.println("Starting vent_CEE...");
+
+    // Initialize logging system early - only needs Serial and RAM
+    initLogging();
+    LOG_INFO("System", "Starting vent_CEE...");
 
     // Register Ethernet event handler
     WiFi.onEvent(onEvent);
@@ -343,7 +345,7 @@ void setup() {
     // Initialize Ethernet with W5500
     bool ethInitialized = ETH.begin(ETH_PHY_W5500, 1, 14, 10, 9, HSPI_HOST, 13, 12, 11);
     if (!ethInitialized) {
-        Serial.println("ETH init failed! Continuing without network...");
+        LOG_ERROR("ETH", "Init failed! Continuing without network...");
     } else {
         // Set static IP
         ETH.config(IPAddress(192,168,2,192), IPAddress(192,168,2,1), IPAddress(255,255,255,0), IPAddress(192,168,2,1));
@@ -354,27 +356,26 @@ void setup() {
 
         while (ETH.localIP() == IPAddress(0, 0, 0, 0) && (millis() - startTime) < IP_TIMEOUT) {
             delay(1000);
-            Serial.println("Waiting for IP...");
+            LOG_INFO("ETH", "Waiting for IP...");
         }
 
         if (ETH.localIP() == IPAddress(0, 0, 0, 0)) {
-            Serial.println("IP timeout! Continuing without network connection...");
+            LOG_ERROR("ETH", "IP timeout! Continuing without network connection...");
         } else {
-            Serial.print("Static IP assigned: ");
-            Serial.println(ETH.localIP());
+            LOG_INFO("ETH", "Static IP assigned: %s", ETH.localIP().toString().c_str());
         }
     }
 
     // Setup NTP
-    Serial.println("Setting up NTP...");
+    LOG_INFO("NTP", "Setting up NTP...");
     setupNTP();
     syncNTP();  // Try to sync NTP on startup
-    Serial.println("NTP setup complete");
+    LOG_INFO("NTP", "Setup complete");
 
     // Initialize SD card
-    Serial.println("Initializing SD card...");
+    LOG_INFO("SD", "Initializing SD card...");
     initSD();
-    Serial.println("SD initialization complete");
+    LOG_INFO("SD", "Initialization complete");
 
     // Initialize sensors
     initSensors();
@@ -384,9 +385,6 @@ void setup() {
 
     // Initialize vent outputs
     setupVent();
-
-    // Initialize logging
-    initLogging();
 
     // Load settings from NVS
     loadSettings();
@@ -460,11 +458,11 @@ void loop() {
     if (ETH.localIP() == IPAddress(0, 0, 0, 0) &&
         (now - lastNetworkRetry) > NETWORK_RETRY_INTERVAL) {
         lastNetworkRetry = now;
-        Serial.println("Retrying network connection...");
+        LOG_INFO("ETH", "Retrying network connection...");
 
         if (ETH.begin(ETH_PHY_W5500, 1, 14, 10, 9, HSPI_HOST, 13, 12, 11)) {
             ETH.config(IPAddress(192,168,2,192), IPAddress(192,168,2,1), IPAddress(255,255,255,0), IPAddress(192,168,2,1));
-            Serial.println("Network reconnected!");
+            LOG_INFO("ETH", "Network reconnected!");
         }
     }
 

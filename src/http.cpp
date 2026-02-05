@@ -71,6 +71,7 @@ bool sendStatusUpdate() {
     String jsonString;
     serializeJson(doc, jsonString);
 
+    LOG_DEBUG("HTTP", "Sending JSON: %s", jsonString.c_str());
     LOG_INFO("HTTP", "Sending STATUS_UPDATE to REW");
     return sendHttpPostWithRetry(url.c_str(), jsonString);
 }
@@ -108,6 +109,7 @@ bool sendDewUpdate(const char* room) {
     String jsonString;
     serializeJson(doc, jsonString);
 
+    LOG_DEBUG("HTTP", "Sending JSON: %s", jsonString.c_str());
     LOG_INFO("HTTP", "Sending DEW_UPDATE to %s", room);
     return sendHttpPostWithRetry(url.c_str(), jsonString);
 }

@@ -17,15 +17,15 @@ bool initSD() {
     }
 
     // Get card size
-    uint32_t cardSize = SD.card()->sectorCount() * 512; // Size in bytes
+    uint64_t cardSize = (uint64_t)SD.card()->sectorCount() * 512; // Size in bytes
     if (cardSize == 0) {
-        Serial.println("SD: Card size unknown");
+        Serial.println("SD: Card not present");
         return false;
     }
 
     // Convert to MB
-    uint32_t cardSizeMB = cardSize / (1024 * 1024);
-    Serial.printf("SD: Card present, size: %u MB\n", cardSizeMB);
+    uint64_t cardSizeMB = cardSize / (1024 * 1024);
+    Serial.printf("SD: Card present, size: %llu MB\n", cardSizeMB);
 
     return true;
 }
