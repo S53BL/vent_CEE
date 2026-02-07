@@ -10,6 +10,7 @@ AsyncWebServer server(80);
 
 // HTTP endpoint handlers
 void handleManualControl(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+    LOG_DEBUG("HTTP", "handleManualControl called - index=%d, len=%d, total=%d", index, len, total);
     static String body;
     if (index == 0) body = "";
     for (size_t i = 0; i < len; i++) {
@@ -83,6 +84,7 @@ void handleManualControl(AsyncWebServerRequest *request, uint8_t *data, size_t l
 }
 
 void handleSensorData(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+    LOG_DEBUG("HTTP", "handleSensorData called - index=%d, len=%d, total=%d", index, len, total);
     static String body;
     if (index == 0) body = "";
     for (size_t i = 0; i < len; i++) {
@@ -1113,11 +1115,13 @@ void setupWebServer() {
     NULL,  // upload handler (not needed)
     handleManualControl  // body handler
   );
+  LOG_INFO("Web", "Registered /api/manual-control endpoint");
   server.on("/api/sensor-data", HTTP_POST,
     [](AsyncWebServerRequest *request){},  // empty header handler
     NULL,  // upload handler (not needed)
     handleSensorData  // body handler
   );
+  LOG_INFO("Web", "Registered /api/sensor-data endpoint");
 
   // Heartbeat endpoint
   server.on("/api/ping", HTTP_GET, [](AsyncWebServerRequest *request){
@@ -1125,9 +1129,16 @@ void setupWebServer() {
     request->send(200, "text/plain", "pong");
   });
 
-  // Catch-all handler for debugging
+  // Test endpoint for debugging
+  server.on("/api/test", HTTP_ANY, [](AsyncWebServerRequest *request){
+    LOG_INFO("Web", "TEST ENDPOINT called: %s %s from %s", request->methodToString(), request->url().c_str(), request->client()->remoteIP().toString().c_str());
+    request->send(200, "application/json", "{\"status\":\"OK\",\"message\":\"Test endpoint working\"}");
+  });
+  LOG_INFO("Web", "Registered /api/test endpoint");
+
+  // Catch-all handler for debugging - log all requests
   server.onNotFound([](AsyncWebServerRequest *request) {
-    LOG_WARN("Web", "404 Not Found: %s %s", request->methodToString(), request->url().c_str());
+    LOG_WARN("Web", "UNHANDLED REQUEST: %s %s from %s", request->methodToString(), request->url().c_str(), request->client()->remoteIP().toString().c_str());
     request->send(404, "text/plain", "Not found");
   });
 
