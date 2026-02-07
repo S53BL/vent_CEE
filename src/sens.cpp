@@ -435,14 +435,9 @@ void readInputs() {
     currentData.wcLight = digitalRead(PIN_WC_LUC) == LOW;
 
     // Logging for state changes
-    static bool lastWindowOpen = !currentData.windowSensor1 || !currentData.windowSensor2;
-    static unsigned long lastWindowLogTime = 0;
-
     const int inputPins[8] = {PIN_KOPALNICA_TIPKA, PIN_UTILITY_STIKALO, PIN_OKNO_SENZOR_1, PIN_OKNO_SENZOR_2,
                               PIN_KOPALNICA_LUC_1, PIN_KOPALNICA_LUC_2, PIN_UTILITY_LUC, PIN_WC_LUC};
     static int lastInputStates[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
-
-    bool currentWindowOpen = !currentData.windowSensor1 || !currentData.windowSensor2;
 
     char logMessage[256];
     for (int i = 0; i < 8; i++) {
@@ -469,11 +464,5 @@ void readInputs() {
             LOG_INFO("Inputs", "%s", event);
             lastInputStates[i] = currentState;
         }
-    }
-
-    if ((currentWindowOpen != lastWindowOpen) && (millis() - lastWindowLogTime >= LOG_REPEAT_INTERVAL)) {
-        LOG_INFO("Inputs", "Okna DS: %s", currentWindowOpen ? "Odprta" : "Zaprta");
-        lastWindowOpen = currentWindowOpen;
-        lastWindowLogTime = millis();
     }
 }

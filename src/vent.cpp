@@ -26,6 +26,24 @@ void setupVent() {
     digitalWrite(PIN_DNEVNI_ODVOD_1, LOW);
     digitalWrite(PIN_DNEVNI_ODVOD_2, LOW);
     digitalWrite(PIN_DNEVNI_ODVOD_3, LOW);
+
+    // SSR relay test sequence - turn on each relay for 0.5 seconds in order
+    const int relayPins[] = {PIN_KOPALNICA_ODVOD, PIN_UTILITY_ODVOD, PIN_WC_ODVOD, PIN_SKUPNI_VPIH,
+                             PIN_DNEVNI_VPIH, PIN_DNEVNI_ODVOD_1, PIN_DNEVNI_ODVOD_2, PIN_DNEVNI_ODVOD_3};
+    const char* relayNames[] = {"KOP odvod", "UT odvod", "WC odvod", "Skupni vpih",
+                                "DS vpih", "DS odvod stopnja 1", "DS odvod stopnja 2", "DS odvod stopnja 3"};
+
+    logEvent("[Setup] Starting SSR relay test sequence");
+    for (int i = 0; i < 8; i++) {
+        char logMessage[100];
+        snprintf(logMessage, sizeof(logMessage), "[Setup] Testing SSR %d (GPIO %d) - %s", i+1, relayPins[i], relayNames[i]);
+        logEvent(logMessage);
+        digitalWrite(relayPins[i], HIGH);
+        delay(500);
+        digitalWrite(relayPins[i], LOW);
+        delay(100); // Short pause between tests
+    }
+    logEvent("[Setup] SSR relay test sequence completed");
 }
 
 void controlFans() {
@@ -54,7 +72,7 @@ void controlFans() {
 
 void controlWC() {
     static unsigned long fanStartTime = 0;
-    static bool lastLightState = digitalRead(PIN_WC_LUC) == LOW;
+    static bool lastLightState = false;
     static bool fanActive = false;
 
     bool currentLightState = currentData.wcLight;
@@ -126,8 +144,8 @@ void controlUtility() {
     static unsigned long fanStartTime = 0;
     static unsigned long lastOffTime = 0;
     static bool fanActive = false;
-    static bool lastLightState = digitalRead(PIN_UTILITY_LUC) == LOW;
-    static bool lastSwitchState = digitalRead(PIN_UTILITY_STIKALO) == LOW;
+    static bool lastLightState = false;
+    static bool lastSwitchState = false;
 
     bool currentLightState = currentData.utilityLight;
     bool currentSwitchState = currentData.utilitySwitch;
@@ -281,9 +299,9 @@ void controlBathroom() {
     static unsigned long lastOffTime = 0;
     static unsigned long buttonPressStart = 0;
     static bool fanActive = false;
-    static bool lastButtonState = digitalRead(PIN_KOPALNICA_TIPKA) == LOW;
-    static bool lastLightState1 = digitalRead(PIN_KOPALNICA_LUC_1) == LOW;
-    static bool lastLightState2 = digitalRead(PIN_KOPALNICA_LUC_2) == LOW;
+    static bool lastButtonState = false;
+    static bool lastLightState1 = false;
+    static bool lastLightState2 = false;
     static bool lastLightOn = lastLightState1 || lastLightState2;
     static bool isLongPress = false;
     static unsigned long lastSensorCheck = 0;
@@ -549,9 +567,8 @@ void controlLivingRoom() {
             logEvent(logMessage);
         }
 
-        // Handle window/open door disable
-        bool windowOpen = !currentData.windowSensor1 || !currentData.windowSensor2;
-        if (windowOpen || currentData.disableLivingRoom) {
+    // Handle window/open door disable
+        if (!(currentData.windowSensor1 && currentData.windowSensor2) || currentData.disableLivingRoom) {
             if (fanActive) {
                 digitalWrite(PIN_DNEVNI_VPIH, LOW);
                 digitalWrite(PIN_DNEVNI_ODVOD_1, LOW);
@@ -565,7 +582,7 @@ void controlLivingRoom() {
                 currentData.offTimes[4] = 0;
                 currentData.offTimes[5] = 0;
                 lastOffTime = millis();
-                const char* reason = windowOpen ? "Okna" : "CYD";
+                const char* reason = (!(currentData.windowSensor1 && currentData.windowSensor2)) ? "Okna" : "CYD";
                 snprintf(logMessage, sizeof(logMessage), "[DS Vent] OFF: Diss via %s", reason);
                 logEvent(logMessage);
             }
@@ -573,7 +590,6 @@ void controlLivingRoom() {
         return;
     }
 
-    bool windowOpen = !currentData.windowSensor1 || !currentData.windowSensor2;
     bool isDND = isDNDTime();
     bool isNND = isNNDTime();
     bool adverseConditions = currentData.externalHumidity > settings.humExtremeHighDS ||
@@ -612,7 +628,7 @@ void controlLivingRoom() {
             cyclePercent *= 0.5;
             reason = "Hext>humExtremeHighDS";
         }
-        if (windowOpen) {
+        if (!(currentData.windowSensor1 && currentData.windowSensor2)) {
             cyclePercent = 0.0;
             reason = "Okna";
         }
@@ -630,7 +646,7 @@ void controlLivingRoom() {
 
     if (millis() - lastCycleLog >= 300000) {
         const char* reason = "aktiven";
-        if (windowOpen) reason = "Okna";
+        if (!(currentData.windowSensor1 && currentData.windowSensor2)) reason = "Okna";
         else if (currentData.disableLivingRoom) reason = "CYD";
         else if (isNND) reason = "NND";
         snprintf(logMessage, sizeof(logMessage), "[DS] Cikel %.1f%%, %s, DND:%s, NND:%s, Stopnja:%d",
@@ -639,7 +655,7 @@ void controlLivingRoom() {
         lastCycleLog = millis();
     }
 
-    if (windowOpen || currentData.disableLivingRoom) {
+    if (!(currentData.windowSensor1 && currentData.windowSensor2) || currentData.disableLivingRoom) {
         if (fanActive) {
             digitalWrite(PIN_DNEVNI_VPIH, LOW);
             digitalWrite(PIN_DNEVNI_ODVOD_1, LOW);
@@ -653,7 +669,7 @@ void controlLivingRoom() {
             currentData.offTimes[4] = 0;
             currentData.offTimes[5] = 0;
             lastOffTime = millis();
-            const char* reason = windowOpen ? "Okna" : "CYD";
+            const char* reason = (!(currentData.windowSensor1 && currentData.windowSensor2)) ? "Okna" : "CYD";
             snprintf(logMessage, sizeof(logMessage), "[DS Vent] OFF: Diss via %s", reason);
             logEvent(logMessage);
         }
@@ -672,7 +688,7 @@ void controlLivingRoom() {
     }
 
     bool manualTrigger = currentData.manualTriggerLivingRoom && (!isDNDTime() || settings.dndAllowableManual);
-    if (manualTrigger && !windowOpen) {
+    if (manualTrigger && (currentData.windowSensor1 && currentData.windowSensor2)) {
         if (fanActive) {
             snprintf(logMessage, sizeof(logMessage), "[DS Vent] OFF: Prekinitev z Man Trigg");
             logEvent(logMessage);
