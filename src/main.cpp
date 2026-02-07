@@ -15,6 +15,7 @@
 #include "http.h"
 #include "web.h"
 #include "sd.h"
+#include "message_fields.h"
 
 #define ETH ETH2
 
@@ -30,114 +31,7 @@
 
 
 
-// HTTP endpoint handlers
-void handleManualControl(AsyncWebServerRequest *request) {
-    String body = request->arg("plain");
-    LOG_INFO("HTTP", "Received MANUAL_CONTROL: %s", body.c_str());
 
-    DynamicJsonDocument doc(256);
-    DeserializationError error = deserializeJson(doc, body);
-    if (error) {
-        LOG_ERROR("HTTP", "JSON parse error: %s", error.c_str());
-        request->send(400, "application/json", "{\"status\":\"ERROR\",\"message\":\"Invalid JSON\"}");
-        return;
-    }
-
-    String room = doc["room"] | "";
-    String action = doc["action"] | "";
-
-    if (room == "" || action == "") {
-        LOG_ERROR("HTTP", "Missing room or action in MANUAL_CONTROL");
-        request->send(400, "application/json", "{\"status\":\"ERROR\",\"message\":\"Missing room or action\"}");
-        return;
-    }
-
-    // Handle manual control based on room and action
-    if (action == "manual") {
-        if (room == "wc") {
-            currentData.manualTriggerWC = true;
-            LOG_INFO("HTTP", "Manual trigger WC activated");
-        } else if (room == "ut") {
-            currentData.manualTriggerUtility = true;
-            LOG_INFO("HTTP", "Manual trigger Utility activated");
-        } else if (room == "kop") {
-            currentData.manualTriggerBathroom = true;
-            LOG_INFO("HTTP", "Manual trigger Bathroom activated");
-        } else if (room == "ds") {
-            currentData.manualTriggerLivingRoom = true;
-            LOG_INFO("HTTP", "Manual trigger Living Room activated");
-        } else {
-            LOG_ERROR("HTTP", "Unknown room: %s", room.c_str());
-            request->send(400, "application/json", "{\"status\":\"ERROR\",\"message\":\"Unknown room\"}");
-            return;
-        }
-    } else if (action == "toggle") {
-        if (room == "wc") {
-            currentData.disableWc = !currentData.disableWc;
-            LOG_INFO("HTTP", "WC disable toggled to: %s", currentData.disableWc ? "true" : "false");
-        } else if (room == "ut") {
-            currentData.disableUtility = !currentData.disableUtility;
-            LOG_INFO("HTTP", "Utility disable toggled to: %s", currentData.disableUtility ? "true" : "false");
-        } else if (room == "kop") {
-            currentData.disableBathroom = !currentData.disableBathroom;
-            LOG_INFO("HTTP", "Bathroom disable toggled to: %s", currentData.disableBathroom ? "true" : "false");
-        } else if (room == "ds") {
-            currentData.disableLivingRoom = !currentData.disableLivingRoom;
-            LOG_INFO("HTTP", "Living Room disable toggled to: %s", currentData.disableLivingRoom ? "true" : "false");
-        } else {
-            LOG_ERROR("HTTP", "Unknown room: %s", room.c_str());
-            request->send(400, "application/json", "{\"status\":\"ERROR\",\"message\":\"Unknown room\"}");
-            return;
-        }
-    } else {
-        LOG_ERROR("HTTP", "Unknown action: %s", action.c_str());
-        request->send(400, "application/json", "{\"status\":\"ERROR\",\"message\":\"Unknown action\"}");
-        return;
-    }
-
-    request->send(200, "application/json", "{\"status\":\"OK\"}");
-}
-
-void handleSensorData(AsyncWebServerRequest *request) {
-    String body = request->arg("plain");
-    LOG_INFO("HTTP", "Received SENSOR_DATA: %s", body.c_str());
-
-    DynamicJsonDocument doc(512);
-    DeserializationError error = deserializeJson(doc, body);
-    if (error) {
-        LOG_ERROR("HTTP", "JSON parse error: %s", error.c_str());
-        request->send(400, "application/json", "{\"status\":\"ERROR\",\"message\":\"Invalid JSON\"}");
-        return;
-    }
-
-    // Update external data from REW
-    externalData.externalTemperature = doc["et"] | 0.0f;     // external temp
-    externalData.externalHumidity = doc["eh"] | 0.0f;       // external humidity
-    externalData.externalPressure = doc["ep"] | 0.0f;       // external pressure
-    externalData.livingTempDS = doc["dt"] | 0.0f;           // ds temp (living room)
-    externalData.livingHumidityDS = doc["dh"] | 0.0f;       // ds humidity
-    externalData.livingCO2 = doc["dc"] | 0;                 // ds CO2
-    externalData.timestamp = doc["ts"] | 0;                 // timestamp
-
-    // Update currentData for immediate use by vent control logic
-    currentData.externalTemp = externalData.externalTemperature;
-    currentData.externalHumidity = externalData.externalHumidity;
-    currentData.externalPressure = externalData.externalPressure;
-    currentData.livingTemp = externalData.livingTempDS;
-    currentData.livingHumidity = externalData.livingHumidityDS;
-    currentData.livingCO2 = externalData.livingCO2;
-
-    // Update external data validation
-    if (timeSynced) {
-        lastSensorDataTime = myTZ.now();
-        externalDataValid = true;
-    }
-
-    LOG_INFO("HTTP", "Updated external data - Temp: %.1f°C, Hum: %.1f%%, CO2: %d",
-             externalData.externalTemperature, externalData.externalHumidity, externalData.livingCO2);
-
-    request->send(200, "application/json", "{\"status\":\"OK\"}");
-}
 
 void onNTPUpdate() {
     if (timeStatus() == timeSet) {
@@ -274,39 +168,7 @@ bool syncNTP() {
     return false;
 }
 
-// Setup server endpoints
-void setupServer() {
-    LOG_INFO("HTTP", "Setting up server endpoints");
 
-    // Settings endpoints
-    server.on("/", HTTP_GET, handleRoot);
-    server.on("/data", HTTP_GET, handleDataRequest);
-    server.on("/settings/update", HTTP_POST, handlePostSettings);
-    server.on("/settings/reset", HTTP_POST, handleResetSettings);
-    server.on("/settings/status", HTTP_GET, handleSettingsStatus);
-
-    // Existing endpoints
-    server.on("/status", HTTP_GET, [](AsyncWebServerRequest *request) {
-        String status = "vent_CEE Status\n";
-        status += "IP: " + ETH.localIP().toString() + "\n";
-        status += "MAC: " + ETH.macAddress() + "\n";
-        status += "Uptime: " + String(millis() / 1000) + " seconds\n";
-        request->send(200, "text/plain", status);
-    });
-
-    // New API endpoints
-    server.on("/api/manual-control", HTTP_POST, handleManualControl);
-    server.on("/api/sensor-data", HTTP_POST, handleSensorData);
-
-    // Heartbeat endpoint
-    server.on("/api/ping", HTTP_GET, [](AsyncWebServerRequest *request){
-        request->send(200, "text/plain", "pong");
-    });
-
-    LOG_INFO("HTTP", "Starting server");
-    server.begin();
-    LOG_INFO("HTTP", "Server started on port 80");
-}
 
 // Ethernet event handler
 void onEvent(arduino_event_id_t event) {
@@ -390,7 +252,7 @@ void setup() {
     loadSettings();
 
     // Setup and start web server
-    setupServer();
+    setupWebServer();
 
     // Initial device status check
     checkAllDevices();

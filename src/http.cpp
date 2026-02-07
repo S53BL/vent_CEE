@@ -7,6 +7,7 @@
 #include "logging.h"
 #include "config.h"
 #include "vent.h"
+#include "message_fields.h"
 
 // URLs for different units
 #define REW_URL "http://192.168.2.190"
@@ -196,8 +197,16 @@ void checkAndSendStatusUpdate() {
 bool sendLogsToREW() {
     if (logBuffer.length() == 0) return true;
     String url = String(REW_URL) + "/api/logs";
+
+    // Wrap logBuffer in JSON format
+    DynamicJsonDocument doc(1024);
+    doc[FIELD_LOGS] = logBuffer;
+
+    String jsonString;
+    serializeJson(doc, jsonString);
+
     LOG_INFO("HTTP", "Sending logs to REW, length: %d", logBuffer.length());
-    bool success = sendHttpPostWithRetry(url.c_str(), logBuffer);
+    bool success = sendHttpPostWithRetry(url.c_str(), jsonString);
     if (success) {
         logBuffer.clear();
         LOG_INFO("HTTP", "Logs sent to REW successfully");
@@ -208,7 +217,7 @@ bool sendLogsToREW() {
 }
 
 // Helper function to send HTTP POST
-bool sendHttpPost(const char* url, const String& jsonData, int timeoutMs) {
+int sendHttpPost(const char* url, const String& jsonData, int timeoutMs) {
     HTTPClient http;
     http.begin(url);
     http.addHeader("Content-Type", "application/json");
@@ -220,11 +229,11 @@ bool sendHttpPost(const char* url, const String& jsonData, int timeoutMs) {
         String response = http.getString();
         LOG_INFO("HTTP", "POST to %s - Response: %d, Body: %s", url, httpResponseCode, response.c_str());
         http.end();
-        return (httpResponseCode >= 200 && httpResponseCode < 300);
+        return httpResponseCode;
     } else {
         LOG_ERROR("HTTP", "POST to %s failed - Error: %d", url, httpResponseCode);
         http.end();
-        return false;
+        return httpResponseCode; // Return the error code (negative or 0)
     }
 }
 
@@ -235,20 +244,33 @@ bool sendHttpPostWithRetry(const char* url, const String& jsonData, int maxRetri
     for (int attempt = 1; attempt <= maxRetries; attempt++) {
         LOG_INFO("HTTP", "Attempt %d/%d to %s", attempt, maxRetries, url);
 
-        if (sendHttpPost(url, jsonData, HTTP_TIMEOUT_MS)) {
+        int httpCode = sendHttpPost(url, jsonData, HTTP_TIMEOUT_MS);
+
+        // Success (200-299)
+        if (httpCode >= 200 && httpCode < 300) {
             return true;
         }
 
-        if (attempt < maxRetries) {
-            // Delay before second attempt: 2s
-            int delayMs = 2000;
-            LOG_INFO("HTTP", "Retrying in %d ms", delayMs);
-            delay(delayMs);
+        // HTTP client error (400-499) - message invalid but device online
+        if (httpCode >= 400 && httpCode < 500) {
+            LOG_WARN("HTTP", "Request rejected code=%d - message invalid but device online", httpCode);
+            return true; // Don't mark offline, message was processed
+        }
+
+        // Connection error (0, negative) or server error (500+) - device offline
+        if (httpCode <= 0 || httpCode >= 500) {
+            LOG_ERROR("HTTP", "Connection failed code=%d - device offline", httpCode);
+            if (attempt < maxRetries) {
+                // Delay before retry: 2s
+                int delayMs = 2000;
+                LOG_INFO("HTTP", "Retrying in %d ms", delayMs);
+                delay(delayMs);
+            }
         }
     }
 
     LOG_ERROR("HTTP", "All %d attempts failed for %s", maxRetries, url);
-    return false;
+    return false; // Mark device as offline
 }
 
 // Check if a device is online by pinging its /api/ping endpoint

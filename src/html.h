@@ -10,90 +10,132 @@ const char index_html[] PROGMEM = R"rawliteral(
     <style>
         body {
             font-family: Arial, sans-serif;
-            margin: 10px;
+            margin: 20px;
             font-size: 16px;
             background: #101010;
             color: #e0e0e0;
         }
         h1 {
             text-align: center;
-            font-size: 20px;
+            font-size: 24px;
             color: #e0e0e0;
+            margin-bottom: 30px;
         }
         .form-container {
-            max-width: 500px;
-            margin: auto;
+            max-width: 800px;
+            margin: 0 auto;
+            background: #1a1a1a;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
         }
         table {
             width: 100%;
             border-collapse: collapse;
             font-size: 14px;
+            margin-bottom: 20px;
         }
         th, td {
-            padding: 5px;
+            padding: 12px 8px;
             text-align: left;
             border-bottom: 1px solid #333;
         }
         th {
             background-color: #2a2a2a;
             color: #e0e0e0;
+            font-weight: bold;
+            border-bottom: 2px solid #4da6ff;
         }
-        input[type=number], input[type=checkbox] {
-            padding: 3px;
+        tr:hover {
+            background-color: #252525;
+        }
+        input[type=number], select {
+            padding: 8px 12px;
             font-size: 14px;
             background: #1a1a1a;
             color: #e0e0e0;
             border: 1px solid #555;
+            border-radius: 4px;
+            width: 80px;
+        }
+        input[type=number]:focus, select:focus {
+            outline: none;
+            border-color: #4da6ff;
+            box-shadow: 0 0 0 2px rgba(77, 166, 255, 0.2);
         }
         input[type=number] {
-            width: 60px;
+            width: 80px;
+        }
+        select {
+            width: 120px;
+            cursor: pointer;
         }
         .error {
-            color: #ff4444;
+            color: #ff6b6b;
             text-align: center;
             font-size: 14px;
+            background: rgba(255, 107, 107, 0.1);
+            border: 1px solid #ff6b6b;
+            border-radius: 4px;
+            padding: 10px;
+            margin: 10px 0;
         }
         .success {
             color: #4da6ff;
             text-align: center;
             font-size: 14px;
+            background: rgba(77, 166, 255, 0.1);
+            border: 1px solid #4da6ff;
+            border-radius: 4px;
+            padding: 10px;
+            margin: 10px 0;
         }
         .button-group {
             text-align: center;
-            margin: 10px 0;
+            margin: 20px 0;
         }
         .submit-btn {
-            padding: 5px 10px;
-            margin-right: 5px;
+            padding: 10px 20px;
+            margin: 0 5px;
             background-color: #4da6ff;
             color: #101010;
             border: none;
+            border-radius: 6px;
             cursor: pointer;
             font-size: 14px;
+            font-weight: bold;
+            transition: background-color 0.2s;
+        }
+        .submit-btn:hover {
+            background-color: #6bb3ff;
         }
         .reset-btn {
-            background-color: #ff4444;
+            background-color: #ff6b6b;
+        }
+        .reset-btn:hover {
+            background-color: #ff5252;
         }
         .tab {
             display: flex;
             justify-content: center;
-            border-bottom: 1px solid #ccc;
-            margin-bottom: 10px;
+            border-bottom: 1px solid #333;
+            margin-bottom: 20px;
         }
         .tab button {
-            background-color: #f1f1f1;
+            background-color: #2a2a2a;
             border: none;
             outline: none;
             cursor: pointer;
-            padding: 10px 16px;
-            font-size: 14px;
+            padding: 12px 24px;
+            font-size: 16px;
             margin: 0 5px;
-            background: #2a2a2a;
             color: #e0e0e0;
+            border-radius: 6px 6px 0 0;
+            transition: background-color 0.2s;
         }
         .tab button:hover {
-            background-color: #4da6ff;
-            color: #101010;
+            background-color: #3a3a3a;
         }
         .tab button.active {
             background-color: #4da6ff;
@@ -110,23 +152,46 @@ const char index_html[] PROGMEM = R"rawliteral(
             padding: 0;
         }
         li {
-            margin-bottom: 10px;
+            margin-bottom: 15px;
+            padding: 10px;
+            background: #252525;
+            border-radius: 4px;
+            border-left: 4px solid #4da6ff;
         }
         h3 {
             font-size: 18px;
-            margin-bottom: 5px;
+            margin-bottom: 8px;
             color: #4da6ff;
+            font-weight: bold;
         }
         p {
             font-size: 14px;
             margin: 0;
             color: #e0e0e0;
+            line-height: 1.4;
+        }
+        .nav-link {
+            display: inline-block;
+            margin-top: 20px;
+            padding: 10px 20px;
+            background-color: #4da6ff;
+            color: #101010;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: bold;
+            transition: background-color 0.2s;
+        }
+        .nav-link:hover {
+            background-color: #6bb3ff;
         }
     </style>
 </head>
 <body>
     <h1>Ventilacijski sistem - Nastavitve</h1>
     <div id="timeDisplay" style="text-align: center; margin: 10px 0; font-size: 16px; color: #4da6ff;"></div>
+    <div style="text-align: center; margin-bottom: 20px;">
+        <a href="/" class="nav-link">← Nazaj na začetno stran</a>
+    </div>
     <div class="tab">
         <button class="tablinks active" onclick="openTab(event, 'Settings')">Nastavitve</button>
         <button class="tablinks" onclick="openTab(event, 'Help')">Pomoč</button>
@@ -171,15 +236,30 @@ const char index_html[] PROGMEM = R"rawliteral(
                     </tr>
                     <tr>
                         <td>DND dovoli avtomatiko</td>
-                        <td><input type="checkbox" name="dndAllowAutomatic" id="dndAllowAutomatic"></td>
+                        <td>
+                            <select name="dndAllowAutomatic" id="dndAllowAutomatic">
+                                <option value="0">0 (Izključeno)</option>
+                                <option value="1">1 (Vključeno)</option>
+                            </select>
+                        </td>
                     </tr>
                     <tr>
                         <td>DND dovoli polavtomatiko</td>
-                        <td><input type="checkbox" name="dndAllowSemiautomatic" id="dndAllowSemiautomatic"></td>
+                        <td>
+                            <select name="dndAllowSemiautomatic" id="dndAllowSemiautomatic">
+                                <option value="0">0 (Izključeno)</option>
+                                <option value="1">1 (Vključeno)</option>
+                            </select>
+                        </td>
                     </tr>
                     <tr>
                         <td>DND dovoli ročno upravljanje</td>
-                        <td><input type="checkbox" name="dndAllowManual" id="dndAllowManual" checked></td>
+                        <td>
+                            <select name="dndAllowManual" id="dndAllowManual">
+                                <option value="0">0 (Izključeno)</option>
+                                <option value="1">1 (Vključeno)</option>
+                            </select>
+                        </td>
                     </tr>
                     <tr>
                         <td>Trajanje cikla Dnevni prostor (60–6000 s)</td>
@@ -362,9 +442,9 @@ const char index_html[] PROGMEM = R"rawliteral(
                     document.getElementById("fanOffDurationKop").value = data.FAN_OFF_DURATION_KOP;
                     document.getElementById("tempLowThreshold").value = data.TEMP_LOW_THRESHOLD;
                     document.getElementById("tempMinThreshold").value = data.TEMP_MIN_THRESHOLD;
-                    document.getElementById("dndAllowAutomatic").checked = data.DND_ALLOW_AUTOMATIC;
-                    document.getElementById("dndAllowSemiautomatic").checked = data.DND_ALLOW_SEMIAUTOMATIC;
-                    document.getElementById("dndAllowManual").checked = data.DND_ALLOW_MANUAL;
+                    document.getElementById("dndAllowAutomatic").value = data.DND_ALLOW_AUTOMATIC ? "1" : "0";
+                    document.getElementById("dndAllowSemiautomatic").value = data.DND_ALLOW_SEMIAUTOMATIC ? "1" : "0";
+                    document.getElementById("dndAllowManual").value = data.DND_ALLOW_MANUAL ? "1" : "0";
                     document.getElementById("cycleDurationDS").value = data.CYCLE_DURATION_DS;
                     document.getElementById("cycleActivePercentDS").value = data.CYCLE_ACTIVE_PERCENT_DS;
                     document.getElementById("humThresholdDS").value = data.HUM_THRESHOLD_DS;
@@ -390,9 +470,9 @@ const char index_html[] PROGMEM = R"rawliteral(
             formData.append('fanOffDurationKop', document.getElementById('fanOffDurationKop').value);
             formData.append('tempLowThreshold', document.getElementById('tempLowThreshold').value);
             formData.append('tempMinThreshold', document.getElementById('tempMinThreshold').value);
-            formData.append('dndAllowAutomatic', document.getElementById('dndAllowAutomatic').checked ? 'true' : 'false');
-            formData.append('dndAllowSemiautomatic', document.getElementById('dndAllowSemiautomatic').checked ? 'true' : 'false');
-            formData.append('dndAllowManual', document.getElementById('dndAllowManual').checked ? 'true' : 'false');
+            formData.append('dndAllowAutomatic', document.getElementById('dndAllowAutomatic').value);
+            formData.append('dndAllowSemiautomatic', document.getElementById('dndAllowSemiautomatic').value);
+            formData.append('dndAllowManual', document.getElementById('dndAllowManual').value);
             formData.append('cycleDurationDS', document.getElementById('cycleDurationDS').value);
             formData.append('cycleActivePercentDS', document.getElementById('cycleActivePercentDS').value);
             formData.append('humThresholdDS', document.getElementById('humThresholdDS').value);
@@ -407,8 +487,10 @@ const char index_html[] PROGMEM = R"rawliteral(
             formData.append('tempExtremeHighDS', document.getElementById('tempExtremeHighDS').value);
             formData.append('tempExtremeLowDS', document.getElementById('tempExtremeLowDS').value);
 
-            document.getElementById("error-message").textContent = "";
-            document.getElementById("success-message").textContent = "";
+            // Clear previous messages and show loading state
+            clearMessages();
+            showLoadingState(true);
+
             fetch("/settings/update", { method: "POST", body: formData })
                 .then(response => {
                     if (!response.ok) {
@@ -417,16 +499,67 @@ const char index_html[] PROGMEM = R"rawliteral(
                     return response.text();
                 })
                 .then(data => {
+                    showLoadingState(false);
                     if (data !== "Nastavitve shranjene!") {
-                        document.getElementById("error-message").textContent = data;
+                        showErrorMessage(data);
                         return;
                     }
-                    document.getElementById("success-message").textContent = data;
+                    showSuccessMessage(data);
                 })
                 .catch(error => {
-                    document.getElementById("error-message").textContent = error.message;
-                    document.getElementById("success-message").textContent = "";
+                    showLoadingState(false);
+                    showErrorMessage(error.message);
                 });
+        }
+
+        function clearMessages() {
+            document.getElementById("error-message").textContent = "";
+            document.getElementById("success-message").textContent = "";
+            // Clear any existing timeouts
+            if (window.messageTimeout) {
+                clearTimeout(window.messageTimeout);
+            }
+        }
+
+        function showErrorMessage(message) {
+            const errorElement = document.getElementById("error-message");
+            errorElement.textContent = message;
+            errorElement.style.display = "block";
+
+            // Auto-hide after 5 seconds
+            window.messageTimeout = setTimeout(() => {
+                errorElement.style.display = "none";
+            }, 5000);
+        }
+
+        function showSuccessMessage(message) {
+            const successElement = document.getElementById("success-message");
+            successElement.textContent = message;
+            successElement.style.display = "block";
+
+            // Auto-hide after 5 seconds
+            window.messageTimeout = setTimeout(() => {
+                successElement.style.display = "none";
+            }, 5000);
+        }
+
+        function showLoadingState(isLoading) {
+            const submitBtn = document.querySelector('.submit-btn');
+            const resetBtn = document.querySelector('.reset-btn');
+
+            if (isLoading) {
+                submitBtn.disabled = true;
+                submitBtn.textContent = "Shranjujem...";
+                submitBtn.style.opacity = "0.6";
+                resetBtn.disabled = true;
+                resetBtn.style.opacity = "0.6";
+            } else {
+                submitBtn.disabled = false;
+                submitBtn.textContent = "Shrani";
+                submitBtn.style.opacity = "1";
+                resetBtn.disabled = false;
+                resetBtn.style.opacity = "1";
+            }
         }
 
         function resetSettings() {
