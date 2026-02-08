@@ -22,7 +22,7 @@ bool sendStatusUpdate() {
     DynamicJsonDocument doc(512);
 
     // Fans (0=off, 1=on, 2=disabled)
-    doc["fwc"] = currentData.bathroomFan ? (currentData.disableBathroom ? 2 : 1) : 0;  // fan wc
+    doc["fwc"] = currentData.wcFan ? 1 : 0;  // fan wc
     doc["fut"] = currentData.utilityFan ? (currentData.disableUtility ? 2 : 1) : 0;   // fan utility
     doc["fkop"] = currentData.bathroomFan ? (currentData.disableBathroom ? 2 : 1) : 0; // fan bathroom
     // fdse: 0=off, 1=level1, 2=level2, 3=level3, 9=disabled
@@ -45,9 +45,9 @@ bool sendStatusUpdate() {
     doc["iwb"] = currentData.windowSensor2;      // input window balcony
 
     // Off-times (Unix timestamps)
-    doc["twc"] = currentData.offTimes[0];        // time wc
+    doc["twc"] = currentData.offTimes[2];        // time wc
     doc["tut"] = currentData.offTimes[1];        // time utility
-    doc["tkop"] = currentData.offTimes[2];       // time bathroom
+    doc["tkop"] = currentData.offTimes[0];       // time bathroom
     doc["tdse"] = currentData.offTimes[3];       // time living exhaust
     doc["tdsi"] = currentData.offTimes[4];       // time living intake
     doc["tliv"] = currentData.offTimes[5];       // time living
@@ -120,7 +120,7 @@ bool sendDewUpdate(const char* room) {
 // Check and send STATUS_UPDATE to REW when states change or periodically
 void checkAndSendStatusUpdate() {
     // Calculate current states for comparison
-    uint8_t currentFanWc = currentData.bathroomFan ? (currentData.disableBathroom ? 2 : 1) : 0;
+    uint8_t currentFanWc = currentData.wcFan ? 1 : 0;
     uint8_t currentFanUt = currentData.utilityFan ? (currentData.disableUtility ? 2 : 1) : 0;
     uint8_t currentFanKop = currentData.bathroomFan ? (currentData.disableBathroom ? 2 : 1) : 0;
     uint8_t currentFanDse = currentData.disableLivingRoom ? 9 : currentData.livingExhaustLevel;
@@ -137,12 +137,13 @@ void checkAndSendStatusUpdate() {
     uint8_t currentInputWb = currentData.windowSensor2;
 
     // Check if any state changed
-    static uint8_t lastFanWc = 255, lastFanUt = 255, lastFanKop = 255, lastFanDse = 255;
+    static uint8_t lastFanWc = 255, lastFanUt = 255, lastFanKop = 255, lastFanDse = 255, lastFanDsi = 255, lastFanLiv = 255;
     static uint8_t lastInputBt = 255, lastInputUt = 255, lastInputL1 = 255, lastInputL2 = 255;
     static uint8_t lastInputUl = 255, lastInputWc = 255, lastInputWr = 255, lastInputWb = 255;
 
     bool changed = (currentFanWc != lastFanWc) || (currentFanUt != lastFanUt) ||
                    (currentFanKop != lastFanKop) || (currentFanDse != lastFanDse) ||
+                   (currentFanDsi != lastFanDsi) || (currentFanLiv != lastFanLiv) ||
                    (currentInputBt != lastInputBt) || (currentInputUt != lastInputUt) ||
                    (currentInputL1 != lastInputL1) || (currentInputL2 != lastInputL2) ||
                    (currentInputUl != lastInputUl) || (currentInputWc != lastInputWc) ||
@@ -194,6 +195,8 @@ void checkAndSendStatusUpdate() {
         lastFanUt = currentFanUt;
         lastFanKop = currentFanKop;
         lastFanDse = currentFanDse;
+        lastFanDsi = currentFanDsi;
+        lastFanLiv = currentFanLiv;
         lastInputBt = currentInputBt;
         lastInputUt = currentInputUt;
         lastInputL1 = currentInputL1;
