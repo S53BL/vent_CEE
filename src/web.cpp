@@ -10,15 +10,12 @@ AsyncWebServer server(80);
 
 // HTTP endpoint handlers
 void handleManualControl(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
-    LOG_DEBUG("HTTP", "handleManualControl called - index=%d, len=%d, total=%d", index, len, total);
     static String body;
     if (index == 0) body = "";
     for (size_t i = 0; i < len; i++) {
         body += (char)data[i];
     }
     if (index + len == total) {
-        LOG_INFO("HTTP", "Received MANUAL_CONTROL: %s", body.c_str());
-
         DynamicJsonDocument doc(256);
         DeserializationError error = deserializeJson(doc, body);
         if (error) {
@@ -40,16 +37,16 @@ void handleManualControl(AsyncWebServerRequest *request, uint8_t *data, size_t l
         if (action == "manual") {
             if (room == "wc") {
                 currentData.manualTriggerWC = true;
-                LOG_INFO("HTTP", "Manual trigger WC activated");
+                LOG_INFO("HTTP", "MANUAL_CONTROL: request received - WC activated");
             } else if (room == "ut") {
                 currentData.manualTriggerUtility = true;
-                LOG_INFO("HTTP", "Manual trigger Utility activated");
+                LOG_INFO("HTTP", "MANUAL_CONTROL: request received - Utility activated");
             } else if (room == "kop") {
                 currentData.manualTriggerBathroom = true;
-                LOG_INFO("HTTP", "Manual trigger Bathroom activated");
+                LOG_INFO("HTTP", "MANUAL_CONTROL: request received - Bathroom activated");
             } else if (room == "ds") {
                 currentData.manualTriggerLivingRoom = true;
-                LOG_INFO("HTTP", "Manual trigger Living Room activated");
+                LOG_INFO("HTTP", "MANUAL_CONTROL: request received - Living Room activated");
             } else {
                 LOG_ERROR("HTTP", "Unknown room: %s", room.c_str());
                 request->send(400, "application/json", "{\"status\":\"ERROR\",\"message\":\"Unknown room\"}");
@@ -58,16 +55,16 @@ void handleManualControl(AsyncWebServerRequest *request, uint8_t *data, size_t l
         } else if (action == "toggle") {
             if (room == "wc") {
                 currentData.disableWc = !currentData.disableWc;
-                LOG_INFO("HTTP", "WC disable toggled to: %s", currentData.disableWc ? "1" : "0");
+                LOG_INFO("HTTP", "MANUAL_CONTROL: request received - WC %s", currentData.disableWc ? "disabled" : "enabled");
             } else if (room == "ut") {
                 currentData.disableUtility = !currentData.disableUtility;
-                LOG_INFO("HTTP", "Utility disable toggled to: %s", currentData.disableUtility ? "1" : "0");
+                LOG_INFO("HTTP", "MANUAL_CONTROL: request received - Utility %s", currentData.disableUtility ? "disabled" : "enabled");
             } else if (room == "kop") {
                 currentData.disableBathroom = !currentData.disableBathroom;
-                LOG_INFO("HTTP", "Bathroom disable toggled to: %s", currentData.disableBathroom ? "1" : "0");
+                LOG_INFO("HTTP", "MANUAL_CONTROL: request received - Bathroom %s", currentData.disableBathroom ? "disabled" : "enabled");
             } else if (room == "ds") {
                 currentData.disableLivingRoom = !currentData.disableLivingRoom;
-                LOG_INFO("HTTP", "Living Room disable toggled to: %s", currentData.disableLivingRoom ? "1" : "0");
+                LOG_INFO("HTTP", "MANUAL_CONTROL: request received - Living Room %s", currentData.disableLivingRoom ? "disabled" : "enabled");
             } else {
                 LOG_ERROR("HTTP", "Unknown room: %s", room.c_str());
                 request->send(400, "application/json", "{\"status\":\"ERROR\",\"message\":\"Unknown room\"}");
@@ -91,8 +88,6 @@ void handleSensorData(AsyncWebServerRequest *request, uint8_t *data, size_t len,
         body += (char)data[i];
     }
     if (index + len == total) {
-        LOG_INFO("HTTP", "Received SENSOR_DATA: %s", body.c_str());
-
         DynamicJsonDocument doc(512);
         DeserializationError error = deserializeJson(doc, body);
         if (error) {
@@ -124,7 +119,7 @@ void handleSensorData(AsyncWebServerRequest *request, uint8_t *data, size_t len,
             externalDataValid = true;
         }
 
-        LOG_INFO("HTTP", "Updated external data - Temp: %.1f°C, Hum: %.1f%%, CO2: %d",
+        LOG_INFO("HTTP", "SENSOR_DATA: Received - Temp: %.1f°C, Hum: %.1f%%, CO2: %d, internal updated",
                  externalData.externalTemperature, externalData.externalHumidity, externalData.livingCO2);
 
         request->send(200, "application/json", "{\"status\":\"OK\"}");
@@ -315,6 +310,20 @@ const char* HTML_SETTINGS = R"rawliteral(
         .nav-link:hover {
             background-color: #6bb3ff;
         }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #e0e0e0;
+        }
+        .form-group .description {
+            font-size: 14px;
+            color: #aaa;
+            margin-top: 5px;
+        }
     </style>
 </head>
 <body>
@@ -336,115 +345,146 @@ const char* HTML_SETTINGS = R"rawliteral(
                     <input type="button" value="Shrani" class="submit-btn" onclick="saveSettings()">
                     <input type="button" value="Razveljavi spremembe" class="submit-btn reset-btn" onclick="updateSettings()">
                 </div>
-                <table>
-                    <tr>
-                        <th>Parameter</th>
-                        <th>Vnos</th>
-                    </tr>
-                    <tr>
-                        <td>Meja vlage Kopalnica/Utility (0–100 %)</td>
-                        <td><input type="number" name="humThreshold" id="humThreshold" step="1" min="0" max="100"></td>
-                    </tr>
-                    <tr>
-                        <td>Trajanje ventilatorjev (60–6000 s)</td>
-                        <td><input type="number" name="fanDuration" id="fanDuration" step="1" min="60" max="6000"></td>
-                    </tr>
-                    <tr>
-                        <td>Čakanje Utility/WC (60–6000 s)</td>
-                        <td><input type="number" name="fanOffDuration" id="fanOffDuration" step="1" min="60" max="6000"></td>
-                    </tr>
-                    <tr>
-                        <td>Čakanje Kopalnica (60–6000 s)</td>
-                        <td><input type="number" name="fanOffDurationKop" id="fanOffDurationKop" step="1" min="60" max="6000"></td>
-                    </tr>
-                    <tr>
-                        <td>Meja nizke zunanje temperature (-20–40 °C)</td>
-                        <td><input type="number" name="tempLowThreshold" id="tempLowThreshold" step="1" min="-20" max="40"></td>
-                    </tr>
-                    <tr>
-                        <td>Meja minimalne zunanje temperature (-20–40 °C)</td>
-                        <td><input type="number" name="tempMinThreshold" id="tempMinThreshold" step="1" min="-20" max="40"></td>
-                    </tr>
-                    <tr>
-                        <td>DND dovoli avtomatiko</td>
-                        <td>
-                            <select name="dndAllowAutomatic" id="dndAllowAutomatic">
-                                <option value="0">0 (Izključeno)</option>
-                                <option value="1">1 (Vključeno)</option>
-                            </select>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td>DND dovoli polavtomatiko</td>
-                        <td>
-                            <select name="dndAllowSemiautomatic" id="dndAllowSemiautomatic">
-                                <option value="0">0 (Izključeno)</option>
-                                <option value="1">1 (Vključeno)</option>
-                            </select>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td>DND dovoli ročno upravljanje</td>
-                        <td>
-                            <select name="dndAllowManual" id="dndAllowManual">
-                                <option value="0">0 (Izključeno)</option>
-                                <option value="1">1 (Vključeno)</option>
-                            </select>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td>Trajanje cikla Dnevni prostor (60–6000 s)</td>
-                        <td><input type="number" name="cycleDurationDS" id="cycleDurationDS" step="1" min="60" max="6000"></td>
-                    </tr>
-                    <tr>
-                        <td>Aktivni delež cikla Dnevni prostor (0–100 %)</td>
-                        <td><input type="number" name="cycleActivePercentDS" id="cycleActivePercentDS" step="1" min="0" max="100"></td>
-                    </tr>
-                    <tr>
-                        <td>Meja vlage Dnevni prostor (0–100 %)</td>
-                        <td><input type="number" name="humThresholdDS" id="humThresholdDS" step="1" min="0" max="100"></td>
-                    </tr>
-                    <tr>
-                        <td>Visoka meja vlage Dnevni prostor (0–100 %)</td>
-                        <td><input type="number" name="humThresholdHighDS" id="humThresholdHighDS" step="1" min="0" max="100"></td>
-                    </tr>
-                    <tr>
-                        <td>Ekstremno visoka vlaga Dnevni prostor (0–100 %)</td>
-                        <td><input type="number" name="humExtremeHighDS" id="humExtremeHighDS" step="1" min="0" max="100"></td>
-                    </tr>
-                    <tr>
-                        <td>Nizka meja CO2 Dnevni prostor (400–2000 ppm)</td>
-                        <td><input type="number" name="co2ThresholdLowDS" id="co2ThresholdLowDS" step="1" min="400" max="2000"></td>
-                    </tr>
-                    <tr>
-                        <td>Visoka meja CO2 Dnevni prostor (400–2000 ppm)</td>
-                        <td><input type="number" name="co2ThresholdHighDS" id="co2ThresholdHighDS" step="1" min="400" max="2000"></td>
-                    </tr>
-                    <tr>
-                        <td>Nizko povečanje Dnevni prostor (0–100 %)</td>
-                        <td><input type="number" name="incrementPercentLowDS" id="incrementPercentLowDS" step="1" min="0" max="100"></td>
-                    </tr>
-                    <tr>
-                        <td>Visoko povečanje Dnevni prostor (0–100 %)</td>
-                        <td><input type="number" name="incrementPercentHighDS" id="incrementPercentHighDS" step="1" min="0" max="100"></td>
-                    </tr>
-                    <tr>
-                        <td>Povečanje za temperaturo Dnevni prostor (0–100 %)</td>
-                        <td><input type="number" name="incrementPercentTempDS" id="incrementPercentTempDS" step="1" min="0" max="100"></td>
-                    </tr>
-                    <tr>
-                        <td>Idealna temperatura Dnevni prostor (-20–40 °C)</td>
-                        <td><input type="number" name="tempIdealDS" id="tempIdealDS" step="1" min="-20" max="40"></td>
-                    </tr>
-                    <tr>
-                        <td>Ekstremno visoka temperatura Dnevni prostor (-20–40 °C)</td>
-                        <td><input type="number" name="tempExtremeHighDS" id="tempExtremeHighDS" step="1" min="-20" max="40"></td>
-                    </tr>
-                    <tr>
-                        <td>Ekstremno nizka temperatura Dnevni prostor (-20–40 °C)</td>
-                        <td><input type="number" name="tempExtremeLowDS" id="tempExtremeLowDS" step="1" min="-20" max="40"></td>
-                    </tr>
-                </table>
+                <div class="form-group">
+                    <label for="humThreshold">Meja vlage Kopalnica/Utility</label>
+                    <input type="number" name="humThreshold" id="humThreshold" step="1" min="0" max="100">
+                    <div class="description">Meja vlage za avtomatsko aktivacijo ventilatorjev v Kopalnici in Utility (0–100 %)</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="fanDuration">Trajanje ventilatorjev</label>
+                    <input type="number" name="fanDuration" id="fanDuration" step="1" min="60" max="6000">
+                    <div class="description">Trajanje delovanja ventilatorjev po sprožilcu (60–6000 s)</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="fanOffDuration">Čakanje Utility/WC</label>
+                    <input type="number" name="fanOffDuration" id="fanOffDuration" step="1" min="60" max="6000">
+                    <div class="description">Čas čakanja pred naslednjim ciklom v Utility in WC (60–6000 s)</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="fanOffDurationKop">Čakanje Kopalnica</label>
+                    <input type="number" name="fanOffDurationKop" id="fanOffDurationKop" step="1" min="60" max="6000">
+                    <div class="description">Čas čakanja pred naslednjim ciklom v Kopalnici (60–6000 s)</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="tempLowThreshold">Meja nizke zunanje temperature</label>
+                    <input type="number" name="tempLowThreshold" id="tempLowThreshold" step="1" min="-20" max="40">
+                    <div class="description">Zunanja temperatura, pod katero se delovanje ventilatorjev zmanjša (-20–40 °C)</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="tempMinThreshold">Meja minimalne zunanje temperature</label>
+                    <input type="number" name="tempMinThreshold" id="tempMinThreshold" step="1" min="-20" max="40">
+                    <div class="description">Zunanja temperatura, pod katero se ventilatorji ustavijo (-20–40 °C)</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="dndAllowAutomatic">DND dovoli avtomatiko</label>
+                    <select name="dndAllowAutomatic" id="dndAllowAutomatic">
+                        <option value="0">0 (Izključeno)</option>
+                        <option value="1">1 (Vključeno)</option>
+                    </select>
+                    <div class="description">Dovoli avtomatsko aktivacijo ventilatorjev med DND (nočni čas)</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="dndAllowSemiautomatic">DND dovoli polavtomatiko</label>
+                    <select name="dndAllowSemiautomatic" id="dndAllowSemiautomatic">
+                        <option value="0">0 (Izključeno)</option>
+                        <option value="1">1 (Vključeno)</option>
+                    </select>
+                    <div class="description">Dovoli polavtomatske sprožilce (npr. luči) med DND</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="dndAllowManual">DND dovoli ročno upravljanje</label>
+                    <select name="dndAllowManual" id="dndAllowManual">
+                        <option value="0">0 (Izključeno)</option>
+                        <option value="1">1 (Vključeno)</option>
+                    </select>
+                    <div class="description">Dovoli ročne sprožilce med DND</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="cycleDurationDS">Trajanje cikla Dnevni prostor</label>
+                    <input type="number" name="cycleDurationDS" id="cycleDurationDS" step="1" min="60" max="6000">
+                    <div class="description">Trajanje cikla prezračevanja v Dnevnem prostoru (60–6000 s)</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="cycleActivePercentDS">Aktivni delež cikla Dnevni prostor</label>
+                    <input type="number" name="cycleActivePercentDS" id="cycleActivePercentDS" step="1" min="0" max="100">
+                    <div class="description">Aktivni delež cikla v Dnevnem prostoru (0–100 %)</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="humThresholdDS">Meja vlage Dnevni prostor</label>
+                    <input type="number" name="humThresholdDS" id="humThresholdDS" step="1" min="0" max="100">
+                    <div class="description">Meja vlage za povečanje cikla v Dnevnem prostoru (0–100 %)</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="humThresholdHighDS">Visoka meja vlage Dnevni prostor</label>
+                    <input type="number" name="humThresholdHighDS" id="humThresholdHighDS" step="1" min="0" max="100">
+                    <div class="description">Visoka meja vlage za večje povečanje cikla v Dnevnem prostoru (0–100 %)</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="humExtremeHighDS">Ekstremno visoka vlaga Dnevni prostor</label>
+                    <input type="number" name="humExtremeHighDS" id="humExtremeHighDS" step="1" min="0" max="100">
+                    <div class="description">Ekstremno visoka zunanja vlaga za zmanjšanje cikla (0–100 %)</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="co2ThresholdLowDS">Nizka meja CO2 Dnevni prostor</label>
+                    <input type="number" name="co2ThresholdLowDS" id="co2ThresholdLowDS" step="1" min="400" max="2000">
+                    <div class="description">Nizka meja CO2 za povečanje cikla v Dnevnem prostoru (400–2000 ppm)</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="co2ThresholdHighDS">Visoka meja CO2 Dnevni prostor</label>
+                    <input type="number" name="co2ThresholdHighDS" id="co2ThresholdHighDS" step="1" min="400" max="2000">
+                    <div class="description">Visoka meja CO2 za večje povečanje cikla v Dnevnem prostoru (400–2000 ppm)</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="incrementPercentLowDS">Nizko povečanje Dnevni prostor</label>
+                    <input type="number" name="incrementPercentLowDS" id="incrementPercentLowDS" step="1" min="0" max="100">
+                    <div class="description">Nizko povečanje cikla ob mejah vlage/CO2 v Dnevnem prostoru (0–100 %)</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="incrementPercentHighDS">Visoko povečanje Dnevni prostor</label>
+                    <input type="number" name="incrementPercentHighDS" id="incrementPercentHighDS" step="1" min="0" max="100">
+                    <div class="description">Visoko povečanje cikla ob visokih mejah vlage/CO2 v Dnevnem prostoru (0–100 %)</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="incrementPercentTempDS">Povečanje za temperaturo Dnevni prostor</label>
+                    <input type="number" name="incrementPercentTempDS" id="incrementPercentTempDS" step="1" min="0" max="100">
+                    <div class="description">Povečanje cikla za hlajenje/ogrevanje v Dnevnem prostoru (0–100 %)</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="tempIdealDS">Idealna temperatura Dnevni prostor</label>
+                    <input type="number" name="tempIdealDS" id="tempIdealDS" step="1" min="-20" max="40">
+                    <div class="description">Idealna temperatura v Dnevnem prostoru (-20–40 °C)</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="tempExtremeHighDS">Ekstremno visoka temperatura Dnevni prostor</label>
+                    <input type="number" name="tempExtremeHighDS" id="tempExtremeHighDS" step="1" min="-20" max="40">
+                    <div class="description">Ekstremno visoka zunanja temperatura za zmanjšanje cikla (-20–40 °C)</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="tempExtremeLowDS">Ekstremno nizka temperatura Dnevni prostor</label>
+                    <input type="number" name="tempExtremeLowDS" id="tempExtremeLowDS" step="1" min="-20" max="40">
+                    <div class="description">Ekstremno nizka zunanja temperatura za zmanjšanje cikla (-20–40 °C)</div>
+                </div>
             </form>
         </div>
     </div>
@@ -939,8 +979,8 @@ void handleDataRequest(AsyncWebServerRequest *request) {
                 String("\"FAN_OFF_DURATION_KOP\":\"") + String(prefs.getUInt("fanOffDurationKop", 1200)) + "\"," +
                 String("\"TEMP_LOW_THRESHOLD\":\"") + String((int)prefs.getFloat("tempLowThreshold", 5.0f)) + "\"," +
                 String("\"TEMP_MIN_THRESHOLD\":\"") + String((int)prefs.getFloat("tempMinThreshold", -10.0f)) + "\"," +
-                String("\"DND_ALLOW_AUTOMATIC\":") + String(prefs.getUChar("dndAllowableAutomatic", 1) != 0 ? "1" : "0") + "," +
-                String("\"DND_ALLOW_SEMIAUTOMATIC\":") + String(prefs.getUChar("dndAllowableSemiautomatic", 1) != 0 ? "1" : "0") + "," +
+                String("\"DND_ALLOW_AUTOMATIC\":") + String(prefs.getUChar("dndAllowableAutomatic", 0) != 0 ? "1" : "0") + "," +
+                String("\"DND_ALLOW_SEMIAUTOMATIC\":") + String(prefs.getUChar("dndAllowableSemiautomatic", 0) != 0 ? "1" : "0") + "," +
                 String("\"DND_ALLOW_MANUAL\":") + String(prefs.getUChar("dndAllowableManual", 1) != 0 ? "1" : "0") + "," +
                 String("\"CYCLE_DURATION_DS\":\"") + String(prefs.getUInt("cycleDurationDS", 60)) + "\"," +
                 String("\"CYCLE_ACTIVE_PERCENT_DS\":\"") + String((int)prefs.getFloat("cycleActivePercentDS", 30.0f)) + "\"," +
@@ -1131,7 +1171,12 @@ void setupWebServer() {
 
   // Heartbeat endpoint
   server.on("/api/ping", HTTP_GET, [](AsyncWebServerRequest *request){
-    LOG_DEBUG("Web", "Zahtevek: GET /api/ping");
+    String ip = request->client()->remoteIP().toString();
+    String source = ip;
+    if (ip == "192.168.2.190") source = "REW";
+    else if (ip == "192.168.2.193") source = "UT_DEW";
+    else if (ip == "192.168.2.194") source = "KOP_DEW";
+    LOG_DEBUG("Web", "Zahtevek: GET /api/ping from %s", source.c_str());
     request->send(200, "text/plain", "pong");
   });
 

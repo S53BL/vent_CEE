@@ -106,8 +106,24 @@ void controlWC() {
         return;
     }
 
+    // Check for ignored manual triggers due to disabled state
+    if (currentData.disableWc && currentData.manualTriggerWC) {
+        char logMessage[256];
+        snprintf(logMessage, sizeof(logMessage), "[WC Vent] Manual trigger ignored - WC disabled");
+        logEvent(logMessage);
+        currentData.manualTriggerWC = false;
+    }
+
     bool manualTrigger = currentData.manualTriggerWC && (!isDNDTime() || settings.dndAllowableManual);
     bool semiAutomaticTrigger = lastLightState && !currentLightState && (!isDNDTime() || settings.dndAllowableSemiautomatic);
+
+    // Check for ignored manual triggers due to fan already active
+    if (manualTrigger && fanActive) {
+        char logMessage[256];
+        snprintf(logMessage, sizeof(logMessage), "[WC Vent] Manual trigger ignored - fan already active");
+        logEvent(logMessage);
+        currentData.manualTriggerWC = false;
+    }
 
     char logMessage[256];
     if ((manualTrigger || (semiAutomaticTrigger && settings.dndAllowableSemiautomatic)) && !fanActive) {
@@ -209,7 +225,31 @@ void controlUtility() {
                            (millis() - lastOffTime >= settings.fanOffDuration / 2 * 1000 || !fanActive) &&
                            externalDataValid;
 
+    // Check for ignored manual triggers due to DND restrictions
+    if (currentData.manualTriggerUtility && !manualTrigger) {
+        char logMessage[256];
+        snprintf(logMessage, sizeof(logMessage), "[UT Vent] Manual trigger ignored - DND dovoli ročno upravljanje = Disabled");
+        logEvent(logMessage);
+        currentData.manualTriggerUtility = false;
+    }
+
+    // Check for ignored manual triggers due to fan already active
+    if (manualTrigger && fanActive) {
+        char logMessage[256];
+        snprintf(logMessage, sizeof(logMessage), "[UT Vent] Manual trigger ignored - fan already active");
+        logEvent(logMessage);
+        currentData.manualTriggerUtility = false;
+    }
+
     char logMessage[256];
+
+    // Check for ignored manual triggers due to disabled state
+    if (currentData.disableUtility && currentData.manualTriggerUtility) {
+        snprintf(logMessage, sizeof(logMessage), "[UT Vent] Manual trigger ignored - utility disabled");
+        logEvent(logMessage);
+        currentData.manualTriggerUtility = false;
+    }
+
     if (currentSwitchState != lastSwitchState) {
         if (!currentSwitchState) {
             currentData.disableUtility = true;
@@ -250,8 +290,13 @@ void controlUtility() {
         currentData.offTimes[1] = myTZ.now() + duration / 1000;
         const char* triggerType = manualTrigger ? "Man Trigg via SW" :
                                  (semiAutomaticTrigger ? "SemiAuto Trigg (Luč OFF)" : "Auto Trigg");
-        snprintf(logMessage, sizeof(logMessage), "[UT Vent] ON: %s, Hut=%.1f%%>humThreshold=%.1f%%, Trajanje: %u s",
-                 triggerType, currentData.utilityHumidity, settings.humThreshold, duration / 1000);
+        if (manualTrigger) {
+            snprintf(logMessage, sizeof(logMessage), "[UT Vent] ON: %s, Trajanje: %u s",
+                     triggerType, duration / 1000);
+        } else {
+            snprintf(logMessage, sizeof(logMessage), "[UT Vent] ON: %s, Hut=%.1f%%>humThreshold=%.1f%%, Trajanje: %u s",
+                     triggerType, currentData.utilityHumidity, settings.humThreshold, duration / 1000);
+        }
         logEvent(logMessage);
         if (manualTrigger || (lastSwitchState == false && currentSwitchState == true)) {
             currentData.manualTriggerUtility = false;
@@ -367,6 +412,14 @@ void controlBathroom() {
     }
 
     char logMessage[256];
+
+    // Check for ignored manual triggers due to disabled state
+    if (currentData.disableBathroom && currentData.manualTriggerBathroom) {
+        snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Manual trigger ignored - bathroom disabled");
+        logEvent(logMessage);
+        currentData.manualTriggerBathroom = false;
+    }
+
     if (currentButtonState && !lastButtonState) {
         buttonPressStart = millis();
         snprintf(logMessage, sizeof(logMessage), "[KOP SW] Začetek pritiska");
@@ -430,6 +483,22 @@ void controlBathroom() {
                            (!isDNDTime() || settings.dndAllowableAutomatic) &&
                            (millis() - lastOffTime >= settings.fanOffDuration / 2 * 1000 || !fanActive) &&
                            externalDataValid;
+
+    // Check for ignored manual triggers due to DND restrictions
+    if (currentData.manualTriggerBathroom && !manualTriggerREW) {
+        char logMessage[256];
+        snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Manual trigger ignored - DND dovoli ročno upravljanje = Disabled");
+        logEvent(logMessage);
+        currentData.manualTriggerBathroom = false;
+    }
+
+    // Check for ignored manual triggers due to fan already active
+    if (manualTriggerREW && fanActive) {
+        char logMessage[256];
+        snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Manual trigger ignored - fan already active");
+        logEvent(logMessage);
+        currentData.manualTriggerBathroom = false;
+    }
 
     if ((manualTriggerREW || semiAutomaticTrigger || automaticTrigger) && !adverseConditions && !fanActive) {
         digitalWrite(PIN_KOPALNICA_ODVOD, HIGH);
@@ -687,7 +756,23 @@ void controlLivingRoom() {
         lastAdverseLogged = false;
     }
 
+    // Check for ignored manual triggers due to disabled state
+    if (currentData.disableLivingRoom && currentData.manualTriggerLivingRoom) {
+        snprintf(logMessage, sizeof(logMessage), "[DS Vent] Manual trigger ignored - living room disabled");
+        logEvent(logMessage);
+        currentData.manualTriggerLivingRoom = false;
+    }
+
     bool manualTrigger = currentData.manualTriggerLivingRoom && (!isDNDTime() || settings.dndAllowableManual);
+
+    // Check for ignored manual triggers due to DND restrictions
+    if (currentData.manualTriggerLivingRoom && !manualTrigger) {
+        char logMessage[256];
+        snprintf(logMessage, sizeof(logMessage), "[DS Vent] Manual trigger ignored - DND dovoli ročno upravljanje = Disabled");
+        logEvent(logMessage);
+        currentData.manualTriggerLivingRoom = false;
+    }
+
     if (manualTrigger && (currentData.windowSensor1 && currentData.windowSensor2)) {
         if (fanActive) {
             snprintf(logMessage, sizeof(logMessage), "[DS Vent] OFF: Prekinitev z Man Trigg");

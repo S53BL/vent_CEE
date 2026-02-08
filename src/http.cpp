@@ -73,8 +73,11 @@ bool sendStatusUpdate() {
     serializeJson(doc, jsonString);
 
     LOG_DEBUG("HTTP", "Sending JSON: %s", jsonString.c_str());
-    LOG_INFO("HTTP", "Sending STATUS_UPDATE to REW");
-    return sendHttpPostWithRetry(url.c_str(), jsonString);
+    bool success = sendHttpPostWithRetry("REW", url.c_str(), jsonString, 2, false);
+    if (success) {
+        LOG_INFO("HTTP", "STATUS_UPDATE na REW: uspeh");
+    }
+    return success;
 }
 
 // Send DEW_UPDATE to specified room
@@ -111,8 +114,7 @@ bool sendDewUpdate(const char* room) {
     serializeJson(doc, jsonString);
 
     LOG_DEBUG("HTTP", "Sending JSON: %s", jsonString.c_str());
-    LOG_INFO("HTTP", "Sending DEW_UPDATE to %s", room);
-    return sendHttpPostWithRetry(url.c_str(), jsonString);
+    return sendHttpPostWithRetry(room, url.c_str(), jsonString);
 }
 
 // Check and send STATUS_UPDATE to REW when states change or periodically
@@ -134,13 +136,17 @@ void checkAndSendStatusUpdate() {
     uint8_t currentInputWr = currentData.windowSensor1;
     uint8_t currentInputWb = currentData.windowSensor2;
 
-    // Check if any state changed (simplified - compare key values)
-    static uint8_t lastFanWc = 255, lastFanUt = 255, lastFanKop = 255;
-    static uint8_t lastInputBt = 255, lastInputUt = 255;
+    // Check if any state changed
+    static uint8_t lastFanWc = 255, lastFanUt = 255, lastFanKop = 255, lastFanDse = 255;
+    static uint8_t lastInputBt = 255, lastInputUt = 255, lastInputL1 = 255, lastInputL2 = 255;
+    static uint8_t lastInputUl = 255, lastInputWc = 255, lastInputWr = 255, lastInputWb = 255;
 
     bool changed = (currentFanWc != lastFanWc) || (currentFanUt != lastFanUt) ||
-                   (currentFanKop != lastFanKop) || (currentInputBt != lastInputBt) ||
-                   (currentInputUt != lastInputUt);
+                   (currentFanKop != lastFanKop) || (currentFanDse != lastFanDse) ||
+                   (currentInputBt != lastInputBt) || (currentInputUt != lastInputUt) ||
+                   (currentInputL1 != lastInputL1) || (currentInputL2 != lastInputL2) ||
+                   (currentInputUl != lastInputUl) || (currentInputWc != lastInputWc) ||
+                   (currentInputWr != lastInputWr) || (currentInputWb != lastInputWb);
 
     unsigned long now = millis();
     bool timeToSend = (currentData.lastStatusUpdateTime == 0) ||
@@ -187,8 +193,15 @@ void checkAndSendStatusUpdate() {
         lastFanWc = currentFanWc;
         lastFanUt = currentFanUt;
         lastFanKop = currentFanKop;
+        lastFanDse = currentFanDse;
         lastInputBt = currentInputBt;
         lastInputUt = currentInputUt;
+        lastInputL1 = currentInputL1;
+        lastInputL2 = currentInputL2;
+        lastInputUl = currentInputUl;
+        lastInputWc = currentInputWc;
+        lastInputWr = currentInputWr;
+        lastInputWb = currentInputWb;
         currentData.lastStatusUpdateTime = now;
     }
 }
@@ -205,13 +218,13 @@ bool sendLogsToREW() {
     String jsonString;
     serializeJson(doc, jsonString);
 
-    LOG_INFO("HTTP", "Sending logs to REW, length: %d", logBuffer.length());
-    bool success = sendHttpPostWithRetry(url.c_str(), jsonString);
+    float kb = logBuffer.length() / 1024.0;
+    bool success = sendHttpPostWithRetry("REW", url.c_str(), jsonString, 2, false);
     if (success) {
         logBuffer.clear();
-        LOG_INFO("HTTP", "Logs sent to REW successfully");
+        LOG_INFO("HTTP", "LOGS na REW: %.1f kB uspeh", kb);
     } else {
-        LOG_ERROR("HTTP", "Failed to send logs to REW");
+        LOG_ERROR("HTTP", "LOGS na REW: neuspeh, ponovno čez 5 min");
     }
     return success;
 }
@@ -225,51 +238,49 @@ int sendHttpPost(const char* url, const String& jsonData, int timeoutMs) {
 
     int httpResponseCode = http.POST(jsonData);
 
-    if (httpResponseCode > 0) {
-        String response = http.getString();
-        LOG_INFO("HTTP", "POST to %s - Response: %d, Body: %s", url, httpResponseCode, response.c_str());
-        http.end();
-        return httpResponseCode;
-    } else {
-        LOG_ERROR("HTTP", "POST to %s failed - Error: %d", url, httpResponseCode);
-        http.end();
-        return httpResponseCode; // Return the error code (negative or 0)
-    }
+    http.end();
+    return httpResponseCode;
 }
 
 // Helper function with retry logic
-bool sendHttpPostWithRetry(const char* url, const String& jsonData, int maxRetries) {
+bool sendHttpPostWithRetry(const char* deviceName, const char* url, const String& jsonData, int maxRetries, bool logResult) {
     const int HTTP_TIMEOUT_MS = 5000; // 5 second timeout
+    int lastHttpCode = 0;
 
     for (int attempt = 1; attempt <= maxRetries; attempt++) {
-        LOG_INFO("HTTP", "Attempt %d/%d to %s", attempt, maxRetries, url);
-
         int httpCode = sendHttpPost(url, jsonData, HTTP_TIMEOUT_MS);
+        lastHttpCode = httpCode;
 
         // Success (200-299)
         if (httpCode >= 200 && httpCode < 300) {
+            if (logResult) {
+                LOG_INFO("HTTP", "POST to %s - Response: %d, Success", deviceName, httpCode);
+            }
             return true;
         }
 
         // HTTP client error (400-499) - message invalid but device online
         if (httpCode >= 400 && httpCode < 500) {
             LOG_WARN("HTTP", "Request rejected code=%d - message invalid but device online", httpCode);
+            if (logResult) {
+                LOG_INFO("HTTP", "POST to %s - Response: %d, Success", deviceName, httpCode);
+            }
             return true; // Don't mark offline, message was processed
         }
 
         // Connection error (0, negative) or server error (500+) - device offline
         if (httpCode <= 0 || httpCode >= 500) {
-            LOG_ERROR("HTTP", "Connection failed code=%d - device offline", httpCode);
             if (attempt < maxRetries) {
                 // Delay before retry: 2s
                 int delayMs = 2000;
-                LOG_INFO("HTTP", "Retrying in %d ms", delayMs);
                 delay(delayMs);
             }
         }
     }
 
-    LOG_ERROR("HTTP", "All %d attempts failed for %s", maxRetries, url);
+    if (logResult) {
+        LOG_ERROR("HTTP", "POST to %s - Failed after %d attempts", deviceName, maxRetries);
+    }
     return false; // Mark device as offline
 }
 
@@ -296,28 +307,28 @@ bool checkDeviceOnline(const char* ip) {
 
 // Check all devices that are currently offline
 void checkAllDevices() {
-    LOG_INFO("HTTP", "Checking offline devices...");
+    String statusMessage = "Offline test:";
 
-    if (!rewStatus.isOnline) {
-        if (checkDeviceOnline("192.168.2.190")) {
-            rewStatus.isOnline = true;
-            LOG_INFO("HTTP", "REW (192.168.2.190) is now online");
-        }
+    // Check REW
+    bool rewOnline = checkDeviceOnline("192.168.2.190");
+    if (rewOnline != rewStatus.isOnline) {
+        rewStatus.isOnline = rewOnline;
     }
+    statusMessage += String(" REW ") + (rewOnline ? "online" : "offline");
 
-    if (!utDewStatus.isOnline) {
-        if (checkDeviceOnline("192.168.2.193")) {
-            utDewStatus.isOnline = true;
-            LOG_INFO("HTTP", "UT_DEW (192.168.2.193) is now online");
-        }
+    // Check UT_DEW
+    bool utOnline = checkDeviceOnline("192.168.2.193");
+    if (utOnline != utDewStatus.isOnline) {
+        utDewStatus.isOnline = utOnline;
     }
+    statusMessage += String(", UT_DEW ") + (utOnline ? "online" : "offline");
 
-    if (!kopDewStatus.isOnline) {
-        if (checkDeviceOnline("192.168.2.194")) {
-            kopDewStatus.isOnline = true;
-            LOG_INFO("HTTP", "KOP_DEW (192.168.2.194) is now online");
-        }
+    // Check KOP_DEW
+    bool kopOnline = checkDeviceOnline("192.168.2.194");
+    if (kopOnline != kopDewStatus.isOnline) {
+        kopDewStatus.isOnline = kopOnline;
     }
+    statusMessage += String(", KOP_DEW ") + (kopOnline ? "online" : "offline");
 
-    LOG_INFO("HTTP", "Device check complete");
+    LOG_INFO("HTTP", "%s", statusMessage.c_str());
 }
