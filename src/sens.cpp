@@ -111,6 +111,12 @@ void initSensors() {
         LOG_INFO("BME280", "Sensor not detected on I2C bus");
     }
 
+    // Initial read of power supplies
+    uint32_t adc5V_init  = analogRead(2);
+    uint32_t adc3V3_init = analogRead(3);
+    currentData.supply5V  = (adc5V_init  * 3.3f / 4095.0f) * 2.13f;
+    currentData.supply3V3 = (adc3V3_init * 3.3f / 4095.0f) * 2.18f;
+
     // Log final status
     if (sht41Present && bmePresent) {
         LOG_INFO("Sensors", "All sensors initialized and tested successfully");
@@ -261,6 +267,26 @@ void readSensors() {
             bmePresent = false; // Mark as not present for future checks
         }
     }
+
+    // Read power supplies directly
+    uint32_t adc5V  = analogRead(2);   // GPIO2 za 5 V
+    uint32_t adc3V3 = analogRead(3);   // GPIO3 za 3,3 V
+    currentData.supply5V  = (adc5V  * 3.3f / 4095.0f) * 2.13f;
+    currentData.supply3V3 = (adc3V3 * 3.3f / 4095.0f) * 2.18f;
+
+    // Check power error
+    bool powerError = (currentData.supply5V < 4.0f) || (currentData.supply3V3 < 3.0f);
+    if (powerError) {
+        currentData.errorFlags |= ERR_POWER;
+    } else {
+        currentData.errorFlags &= ~ERR_POWER;
+    }
+
+    // Log local sensors only
+    LOG_INFO("Sensors", "UT: T=%.1f°C H=%.1f%% KOP: T=%.1f°C H=%.1f%% P=%.1fhPa 5V=%.3fV 3.3V=%.3fV",
+             currentData.utilityTemp, currentData.utilityHumidity,
+             currentData.bathroomTemp, currentData.bathroomHumidity, currentData.bathroomPressure,
+             currentData.supply5V, currentData.supply3V3);
 }
 
 bool checkI2CDevice(uint8_t address) {

@@ -76,6 +76,10 @@ void initDefaults() {
   settings.tempExtremeLowDS = -10.0f;
   settings.humExtremeHighDS = 80.0f;
   settings.lastKnownUnixTime = 0;
+
+  // Inicializacija currentData
+  currentData.supply5V = 0.0f;
+  currentData.supply3V3 = 0.0f;
 }
 
 void loadSettings() {

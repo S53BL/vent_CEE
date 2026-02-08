@@ -721,13 +721,19 @@ void handleRoot(AsyncWebServerRequest *request) {
   LOG_DEBUG("Web", "Zahtevek: GET /");
 
   // Create status content
-  String statusContent = "EXT: Temp=" + String(currentData.externalTemp, 1) + "°C, Hum=" + String(currentData.externalHumidity, 1) + "%\n";
-  statusContent += "DS: Temp=" + String(currentData.livingTemp, 1) + "°C, Hum=" + String(currentData.livingHumidity, 1) + "%, CO2=" + String((int)currentData.livingCO2) + " ppm\n";
-  statusContent += "UT: Temp=" + String(currentData.utilityTemp, 1) + "°C, Hum=" + String(currentData.utilityHumidity, 1) + "%\n";
-  statusContent += "KOP: Temp=" + String(currentData.bathroomTemp, 1) + "°C, Hum=" + String(currentData.bathroomHumidity, 1) + "%\n";
-  statusContent += "WC: Pres=" + String((int)currentData.bathroomPressure) + " hPa\n";
-  statusContent += "TIME_WIFI: Power=" + String(currentData.currentPower, 1) + " W, Energy=" + String(currentData.energyConsumption, 1) + " Wh\n";
-  statusContent += "Zadnja posodobitev: " + myTZ.dateTime("H:i:s d.m.y");
+  String statusContent = "<table>\n";
+  statusContent += "<tr><th>Senzor</th><th>Vrednosti</th></tr>\n";
+  statusContent += "<tr><td>EXT</td><td>Temp=" + String(currentData.externalTemp, 1) + "°C, Hum=" + String(currentData.externalHumidity, 1) + "%</td></tr>\n";
+  statusContent += "<tr><td>DS</td><td>Temp=" + String(currentData.livingTemp, 1) + "°C, Hum=" + String(currentData.livingHumidity, 1) + "%, CO2=" + String((int)currentData.livingCO2) + " ppm</td></tr>\n";
+  statusContent += "<tr><td>UT</td><td>Temp=" + String(currentData.utilityTemp, 1) + "°C, Hum=" + String(currentData.utilityHumidity, 1) + "%</td></tr>\n";
+  statusContent += "<tr><td>KOP</td><td>Temp=" + String(currentData.bathroomTemp, 1) + "°C, Hum=" + String(currentData.bathroomHumidity, 1) + "%</td></tr>\n";
+  statusContent += "<tr><td>WC</td><td>Pres=" + String((int)currentData.bathroomPressure) + " hPa</td></tr>\n";
+  statusContent += "<tr><td>5 V supply</td><td>" + String(currentData.supply5V, 3) + " V</td></tr>\n";
+  statusContent += "<tr><td>3.3 V supply</td><td>" + String(currentData.supply3V3, 3) + " V</td></tr>\n";
+  statusContent += "<tr><td>Power error</td><td>" + String((currentData.errorFlags & ERR_POWER) ? "Yes" : "No") + "</td></tr>\n";
+  statusContent += "<tr><td>TIME_WIFI</td><td>Power=" + String(currentData.currentPower, 1) + " W, Energy=" + String(currentData.energyConsumption, 1) + " Wh</td></tr>\n";
+  statusContent += "<tr><td>Zadnja posodobitev</td><td>" + myTZ.dateTime("H:i:s d.m.y") + "</td></tr>\n";
+  statusContent += "</table>\n";
 
   // Basic HTML with navigation
   String html = R"rawliteral(

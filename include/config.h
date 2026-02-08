@@ -73,6 +73,7 @@ const bool useNVS = true; // true za produkcijo
 #define ERR_SHT41 0x02
 #define ERR_LITTLEFS 0x04
 #define ERR_HTTP 0x20
+#define ERR_POWER 0x40
 #define TZ_STRING "CET-1CEST,M3.5.0/2,M10.5.0/3"  // POSIX za CET
 
 // Fan power consumption values (Watts)
@@ -179,6 +180,8 @@ struct CurrentData {
     uint8_t previousFans[6];
     uint8_t previousInputs[8];
     unsigned long lastStatusUpdateTime;
+    float supply5V;      // izmerjena 5 V napetost (po korekciji)
+    float supply3V3;     // izmerjena 3,3 V napetost (po korekciji)
 };
 #endif
 // config.h
