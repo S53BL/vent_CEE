@@ -796,6 +796,312 @@ const char* HTML_SETTINGS = R"rawliteral(
 </html>
 )rawliteral";
 
+// HTML template for sensor offsets page
+const char* HTML_SETTINGS_SENSOR_OFFSETS = R"rawliteral(
+<!DOCTYPE html>
+<html lang="sl">
+<head>
+    <meta charset="UTF-8">
+    <title>CEE - Nastavitve senzorjev</title>
+    <style>
+        body {
+            background: #101010;
+            color: #e0e0e0;
+            font-family: sans-serif;
+            margin: 20px;
+        }
+        h1 {
+            color: white;
+            text-align: center;
+        }
+        .settings-form {
+            max-width: 800px;
+            margin: 20px auto;
+            background: #1a1a1a;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #333;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #e0e0e0;
+        }
+        .form-group input[type="number"] {
+            width: 100%;
+            padding: 10px;
+            background: #2a2a2a;
+            border: 1px solid #555;
+            border-radius: 4px;
+            color: #e0e0e0;
+            font-size: 16px;
+        }
+        .form-group input[type="number"]:focus {
+            outline: none;
+            border-color: #4da6ff;
+        }
+        .form-group .description {
+            font-size: 14px;
+            color: #aaa;
+            margin-top: 5px;
+        }
+        .current-values {
+            background: #2a2a2a;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            border: 1px solid #444;
+        }
+        .current-values h3 {
+            margin-top: 0;
+            color: #4da6ff;
+        }
+        .value-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+        }
+        .value-item:last-child {
+            margin-bottom: 0;
+        }
+        .buttons {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-top: 30px;
+        }
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            text-decoration: none;
+            display: inline-block;
+            text-align: center;
+        }
+        .btn-primary {
+            background: #4da6ff;
+            color: white;
+        }
+        .btn-primary:hover {
+            background: #3a8ae6;
+        }
+        .btn-secondary {
+            background: #ffaa00;
+            color: #101010;
+        }
+        .btn-secondary:hover {
+            background: #e69500;
+        }
+        .btn-danger {
+            background: #ff4444;
+            color: white;
+        }
+        .btn-danger:hover {
+            background: #e63939;
+        }
+        .message {
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            font-weight: bold;
+        }
+        .message.success {
+            background: #44ff44;
+            color: #101010;
+            border: 1px solid #22dd22;
+        }
+        .message.error {
+            background: #ff4444;
+            color: white;
+            border: 1px solid #dd2222;
+        }
+        .back {
+            text-align: center;
+            margin-top: 30px;
+        }
+        .back a {
+            color: #4da6ff;
+            text-decoration: none;
+            padding: 10px 20px;
+            border: 1px solid #4da6ff;
+            border-radius: 5px;
+        }
+        .back a:hover {
+            background: #4da6ff;
+            color: #101010;
+        }
+    </style>
+</head>
+<body>
+    <h1>Nastavitve senzorjev</h1>
+
+    <div id="message" class="message" style="display: none;"></div>
+
+    <div class="current-values">
+        <h3>Trenutne nastavitve</h3>
+        <div class="value-item">
+            <span>Offset temperature BME280 (°C):</span>
+            <span id="currentBmeTempOffset">0.0</span>
+        </div>
+        <div class="value-item">
+            <span>Offset vlažnosti BME280 (%):</span>
+            <span id="currentBmeHumidityOffset">0.0</span>
+        </div>
+        <div class="value-item">
+            <span>Offset tlaka BME280 (hPa):</span>
+            <span id="currentBmePressureOffset">0.0</span>
+        </div>
+        <div class="value-item">
+            <span>Offset temperature SHT41 (°C):</span>
+            <span id="currentShtTempOffset">0.0</span>
+        </div>
+        <div class="value-item">
+            <span>Offset vlažnosti SHT41 (%):</span>
+            <span id="currentShtHumidityOffset">0.0</span>
+        </div>
+    </div>
+
+    <form class="settings-form" id="settingsForm">
+        <div class="form-group">
+            <label for="bmeTempOffset">Offset temperature BME280 (°C)</label>
+            <input type="number" id="bmeTempOffset" name="bmeTempOffset" step="0.1" min="-10.0" max="10.0" required>
+            <div class="description">Prilagoditev temperature BME280 senzorja (-10.0 do +10.0 °C)</div>
+        </div>
+
+        <div class="form-group">
+            <label for="bmeHumidityOffset">Offset vlažnosti BME280 (%)</label>
+            <input type="number" id="bmeHumidityOffset" name="bmeHumidityOffset" step="0.1" min="-20.0" max="20.0" required>
+            <div class="description">Prilagoditev vlažnosti BME280 senzorja (-20.0 do +20.0 %)</div>
+        </div>
+
+        <div class="form-group">
+            <label for="bmePressureOffset">Offset tlaka BME280 (hPa)</label>
+            <input type="number" id="bmePressureOffset" name="bmePressureOffset" step="0.1" min="-50.0" max="50.0" required>
+            <div class="description">Prilagoditev tlaka BME280 senzorja (-50.0 do +50.0 hPa)</div>
+        </div>
+
+        <div class="form-group">
+            <label for="shtTempOffset">Offset temperature SHT41 (°C)</label>
+            <input type="number" id="shtTempOffset" name="shtTempOffset" step="0.1" min="-10.0" max="10.0" required>
+            <div class="description">Prilagoditev temperature SHT41 senzorja (-10.0 do +10.0 °C)</div>
+        </div>
+
+        <div class="form-group">
+            <label for="shtHumidityOffset">Offset vlažnosti SHT41 (%)</label>
+            <input type="number" id="shtHumidityOffset" name="shtHumidityOffset" step="0.1" min="-20.0" max="20.0" required>
+            <div class="description">Prilagoditev vlažnosti SHT41 senzorja (-20.0 do +20.0 %)</div>
+        </div>
+
+        <div class="buttons">
+            <button type="submit" class="btn btn-primary">Shrani nastavitve</button>
+            <button type="button" class="btn btn-secondary" onclick="resetToDefaults()">Ponastavi na privzete</button>
+        </div>
+    </form>
+
+    <div class="back">
+        <a href="/">Nazaj na začetno stran</a>
+    </div>
+
+    <script>
+        // Load current settings on page load
+        loadCurrentSettings();
+
+        function loadCurrentSettings() {
+            fetch('/api/sensor-offsets')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('currentBmeTempOffset').textContent = data.bmeTempOffset.toFixed(1);
+                    document.getElementById('currentBmeHumidityOffset').textContent = data.bmeHumidityOffset.toFixed(1);
+                    document.getElementById('currentBmePressureOffset').textContent = data.bmePressureOffset.toFixed(1);
+                    document.getElementById('currentShtTempOffset').textContent = data.shtTempOffset.toFixed(1);
+                    document.getElementById('currentShtHumidityOffset').textContent = data.shtHumidityOffset.toFixed(1);
+
+                    document.getElementById('bmeTempOffset').value = data.bmeTempOffset;
+                    document.getElementById('bmeHumidityOffset').value = data.bmeHumidityOffset;
+                    document.getElementById('bmePressureOffset').value = data.bmePressureOffset;
+                    document.getElementById('shtTempOffset').value = data.shtTempOffset;
+                    document.getElementById('shtHumidityOffset').value = data.shtHumidityOffset;
+                })
+                .catch(error => {
+                    showMessage('Napaka pri nalaganju nastavitev: ' + error, 'error');
+                });
+        }
+
+        function showMessage(text, type) {
+            const messageDiv = document.getElementById('message');
+            messageDiv.textContent = text;
+            messageDiv.className = 'message ' + type;
+            messageDiv.style.display = 'block';
+
+            // Auto-hide after 5 seconds
+            setTimeout(() => {
+                messageDiv.style.display = 'none';
+            }, 5000);
+        }
+
+        // Handle form submission
+        document.getElementById('settingsForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+
+            const formData = new FormData(this);
+            const data = {};
+            for (let [key, value] of formData.entries()) {
+                data[key] = value;
+            }
+
+            fetch('/api/sensor-offsets', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: new URLSearchParams(data)
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    showMessage(result.message, 'success');
+                    loadCurrentSettings(); // Reload current values
+                } else {
+                    showMessage(result.error || 'Napaka pri shranjevanju', 'error');
+                }
+            })
+            .catch(error => {
+                showMessage('Napaka pri shranjevanju: ' + error, 'error');
+            });
+        });
+
+        function resetToDefaults() {
+            if (!confirm('Ali res želite ponastaviti vse nastavitve na privzete vrednosti?')) {
+                return;
+            }
+
+            fetch('/api/sensor-offsets/reset', {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    showMessage(result.message, 'success');
+                    loadCurrentSettings(); // Reload current values
+                } else {
+                    showMessage(result.error || 'Napaka pri ponastavitvi', 'error');
+                }
+            })
+            .catch(error => {
+                showMessage('Napaka pri ponastavitvi: ' + error, 'error');
+            });
+        }
+    </script>
+</body>
+</html>)rawliteral";
+
 bool settingsUpdatePending = false;
 unsigned long settingsUpdateStartTime = 0;
 bool settingsUpdateSuccess = false;
@@ -899,11 +1205,6 @@ void handleRoot(AsyncWebServerRequest *request) {
 <body>
     <h1>CEE - Ventilacijski sistem</h1>
     <div id="timeDisplay" class="time-display">Trenutni čas: )rawliteral" + myTZ.dateTime() + R"rawliteral( | DND: )rawliteral" + (isDNDTime() ? "DA" : "NE") + R"rawliteral( | NND: )rawliteral" + (isNNDTime() ? "DA" : "NE") + R"rawliteral(</div>
-
-    <div class="nav-container">
-        <a href="/settings" class="nav-button">Nastavitve</a>
-        <a href="/help" class="nav-button">Pomoč</a>
-    </div>
 
     <div class="grid">
         <!-- WC Card -->
@@ -1128,6 +1429,7 @@ void handleRoot(AsyncWebServerRequest *request) {
 
     <div class="nav-container">
         <a href="/settings" class="nav-button">Nastavitve</a>
+        <a href="/sensor-offsets" class="nav-button">Nastavitve senzorjev</a>
         <a href="/help" class="nav-button">Pomoč</a>
     </div>
 
@@ -1166,8 +1468,8 @@ void handleRoot(AsyncWebServerRequest *request) {
                     document.getElementById("ds-temp").textContent = data.living_temp + " °C";
                     document.getElementById("ds-humidity").textContent = data.living_humidity + " %";
                     document.getElementById("ds-co2").textContent = data.living_co2 + " ppm";
-                    document.getElementById("ds-window1").textContent = data.living_window1 ? "Odprto" : "Zaprto";
-                    document.getElementById("ds-window2").textContent = data.living_window2 ? "Odprto" : "Zaprto";
+                    document.getElementById("ds-window1").textContent = data.living_window1 ? "Zaprto" : "Odprto";
+                    document.getElementById("ds-window2").textContent = data.living_window2 ? "Zaprto" : "Odprto";
                     document.getElementById("ds-fan-level").textContent = data.living_fan_level;
                     document.getElementById("ds-duty-cycle").textContent = data.living_duty_cycle + " %";
                     document.getElementById("ds-remaining").textContent = data.living_remaining + " s";
@@ -1560,6 +1862,129 @@ void handleSettingsStatus(AsyncWebServerRequest *request) {
   request->send(200, "application/json", response);
 }
 
+// Sensor offsets handlers
+void handleSensorOffsets(AsyncWebServerRequest *request) {
+  LOG_DEBUG("Web", "Zahtevek: GET /sensor-offsets");
+  request->send(200, "text/html", HTML_SETTINGS_SENSOR_OFFSETS);
+}
+
+void handleGetSensorOffsets(AsyncWebServerRequest *request) {
+  LOG_DEBUG("Web", "Zahtevek: GET /api/sensor-offsets");
+
+  DynamicJsonDocument doc(256);
+  doc["bmeTempOffset"] = settings.bmeTempOffset;
+  doc["bmeHumidityOffset"] = settings.bmeHumidityOffset;
+  doc["bmePressureOffset"] = settings.bmePressureOffset;
+  doc["shtTempOffset"] = settings.shtTempOffset;
+  doc["shtHumidityOffset"] = settings.shtHumidityOffset;
+
+  String response;
+  serializeJson(doc, response);
+  request->send(200, "application/json", response);
+}
+
+void handlePostSensorOffsets(AsyncWebServerRequest *request) {
+  LOG_DEBUG("Web", "Zahtevek: POST /api/sensor-offsets");
+
+  // Check required parameters
+  if (!request->hasParam("bmeTempOffset", true) ||
+      !request->hasParam("bmeHumidityOffset", true) ||
+      !request->hasParam("bmePressureOffset", true) ||
+      !request->hasParam("shtTempOffset", true) ||
+      !request->hasParam("shtHumidityOffset", true)) {
+    LOG_WARN("Web", "Manjkajoči parametri v POST /api/sensor-offsets");
+    request->send(400, "application/json", "{\"error\":\"Manjkajoči parametri: bmeTempOffset, bmeHumidityOffset, bmePressureOffset, shtTempOffset, shtHumidityOffset\"}");
+    return;
+  }
+
+  // Parse and validate parameters
+  float bmeTempOffset = request->getParam("bmeTempOffset", true)->value().toFloat();
+  float bmeHumidityOffset = request->getParam("bmeHumidityOffset", true)->value().toFloat();
+  float bmePressureOffset = request->getParam("bmePressureOffset", true)->value().toFloat();
+  float shtTempOffset = request->getParam("shtTempOffset", true)->value().toFloat();
+  float shtHumidityOffset = request->getParam("shtHumidityOffset", true)->value().toFloat();
+
+  // Basic validation (reasonable ranges)
+  if (bmeTempOffset < -10.0f || bmeTempOffset > 10.0f) {
+    LOG_WARN("Web", "Neveljaven bmeTempOffset: %.2f", bmeTempOffset);
+    request->send(400, "application/json", "{\"error\":\"bmeTempOffset mora biti med -10.0 in 10.0\"}");
+    return;
+  }
+  if (bmeHumidityOffset < -20.0f || bmeHumidityOffset > 20.0f) {
+    LOG_WARN("Web", "Neveljaven bmeHumidityOffset: %.2f", bmeHumidityOffset);
+    request->send(400, "application/json", "{\"error\":\"bmeHumidityOffset mora biti med -20.0 in 20.0\"}");
+    return;
+  }
+  if (bmePressureOffset < -50.0f || bmePressureOffset > 50.0f) {
+    LOG_WARN("Web", "Neveljaven bmePressureOffset: %.2f", bmePressureOffset);
+    request->send(400, "application/json", "{\"error\":\"bmePressureOffset mora biti med -50.0 in 50.0\"}");
+    return;
+  }
+  if (shtTempOffset < -10.0f || shtTempOffset > 10.0f) {
+    LOG_WARN("Web", "Neveljaven shtTempOffset: %.2f", shtTempOffset);
+    request->send(400, "application/json", "{\"error\":\"shtTempOffset mora biti med -10.0 in 10.0\"}");
+    return;
+  }
+  if (shtHumidityOffset < -20.0f || shtHumidityOffset > 20.0f) {
+    LOG_WARN("Web", "Neveljaven shtHumidityOffset: %.2f", shtHumidityOffset);
+    request->send(400, "application/json", "{\"error\":\"shtHumidityOffset mora biti med -20.0 in 20.0\"}");
+    return;
+  }
+
+  // Update settings
+  settings.bmeTempOffset = bmeTempOffset;
+  settings.bmeHumidityOffset = bmeHumidityOffset;
+  settings.bmePressureOffset = bmePressureOffset;
+  settings.shtTempOffset = shtTempOffset;
+  settings.shtHumidityOffset = shtHumidityOffset;
+
+  // Save to NVS
+  saveSettings();
+
+  LOG_INFO("Web", "Sensor offseti shranjeni: bmeTemp=%.2f, bmeHum=%.2f, bmePress=%.2f, shtTemp=%.2f, shtHum=%.2f",
+           bmeTempOffset, bmeHumidityOffset, bmePressureOffset, shtTempOffset, shtHumidityOffset);
+
+  DynamicJsonDocument doc(256);
+  doc["success"] = true;
+  doc["message"] = "Nastavitve senzorjev shranjene";
+  doc["bmeTempOffset"] = settings.bmeTempOffset;
+  doc["bmeHumidityOffset"] = settings.bmeHumidityOffset;
+  doc["bmePressureOffset"] = settings.bmePressureOffset;
+  doc["shtTempOffset"] = settings.shtTempOffset;
+  doc["shtHumidityOffset"] = settings.shtHumidityOffset;
+
+  String response;
+  serializeJson(doc, response);
+  request->send(200, "application/json", response);
+}
+
+void handleResetSensorOffsets(AsyncWebServerRequest *request) {
+  LOG_DEBUG("Web", "Zahtevek: POST /api/sensor-offsets/reset");
+
+  // Reset to defaults
+  settings.bmeTempOffset = 0.0f;
+  settings.bmeHumidityOffset = 0.0f;
+  settings.bmePressureOffset = 0.0f;
+  settings.shtTempOffset = 0.0f;
+  settings.shtHumidityOffset = 0.0f;
+  saveSettings();
+
+  LOG_INFO("Web", "Sensor offseti resetirani na privzete vrednosti");
+
+  DynamicJsonDocument doc(256);
+  doc["success"] = true;
+  doc["message"] = "Nastavitve senzorjev resetirane na privzete vrednosti";
+  doc["bmeTempOffset"] = settings.bmeTempOffset;
+  doc["bmeHumidityOffset"] = settings.bmeHumidityOffset;
+  doc["bmePressureOffset"] = settings.bmePressureOffset;
+  doc["shtTempOffset"] = settings.shtTempOffset;
+  doc["shtHumidityOffset"] = settings.shtHumidityOffset;
+
+  String response;
+  serializeJson(doc, response);
+  request->send(200, "application/json", response);
+}
+
 void setupWebServer() {
   LOG_INFO("Web", "Inicializacija web UI strežnika");
 
@@ -1567,12 +1992,18 @@ void setupWebServer() {
   LOG_DEBUG("Web", "Registriram web UI endpoint-e");
   server.on("/", HTTP_GET, handleRoot);
   server.on("/settings", HTTP_GET, handleSettings);
+  server.on("/sensor-offsets", HTTP_GET, handleSensorOffsets);
   server.on("/help", HTTP_GET, handleHelp);
   server.on("/data", HTTP_GET, handleDataRequest);
   server.on("/current-data", HTTP_GET, handleCurrentDataRequest);
   server.on("/settings/update", HTTP_POST, handlePostSettings);
   server.on("/settings/reset", HTTP_POST, handleResetSettings);
   server.on("/settings/status", HTTP_GET, handleSettingsStatus);
+
+  // Sensor offsets API endpoints
+  server.on("/api/sensor-offsets", HTTP_GET, handleGetSensorOffsets);
+  server.on("/api/sensor-offsets", HTTP_POST, handlePostSensorOffsets);
+  server.on("/api/sensor-offsets/reset", HTTP_POST, handleResetSensorOffsets);
 
   // Status endpoint
   server.on("/status", HTTP_GET, [](AsyncWebServerRequest *request) {

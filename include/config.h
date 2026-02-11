@@ -24,7 +24,7 @@
 
 // Določitev, ali se nastavitve berejo iz NVS ali privzete iz config.h
 const bool useNVS = true; // true za produkcijo
-#define SETTINGS_MARKER 0xAB
+#define SETTINGS_MARKER 0xAD
 #define REW_IP "192.168.2.190"
 // Korekcija odčitkov vlage za kompenzacijo odstopanj senzorjev
 #define BME_HUMIDITY_OFFSET 8.0  // Dodatek k vlagi BME280 (kopalnica) v odstotkih = 8.0
@@ -124,6 +124,18 @@ struct Settings {
     float tempExtremeHighDS = 30.0;
     float tempExtremeLowDS = -10.0;
     float humExtremeHighDS = 80.0;
+
+    // Sensor offset settings for CEE
+    float bmeTempOffset = 0.0f;        // BME280 temperature offset (°C)
+    float bmeHumidityOffset = 0.0f;    // BME280 humidity offset (%)
+    float bmePressureOffset = 0.0f;    // BME280 pressure offset (hPa)
+    float shtTempOffset = 0.0f;        // SHT41 temperature offset (°C)
+    float shtHumidityOffset = 0.0f;    // SHT41 humidity offset (%)
+
+    // Reserved for future sensor offsets
+    float reservedSensor1 = 0.0f;
+    float reservedSensor2 = 0.0f;
+
     uint32_t lastKnownUnixTime = 0;
 };
 struct ExternalData {

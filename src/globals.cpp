@@ -75,6 +75,16 @@ void initDefaults() {
   settings.tempExtremeHighDS = 30.0f;
   settings.tempExtremeLowDS = -10.0f;
   settings.humExtremeHighDS = 80.0f;
+
+  // Sensor offset defaults
+  settings.bmeTempOffset = 0.0f;
+  settings.bmeHumidityOffset = 0.0f;
+  settings.bmePressureOffset = 0.0f;
+  settings.shtTempOffset = 0.0f;
+  settings.shtHumidityOffset = 0.0f;
+  settings.reservedSensor1 = 0.0f;
+  settings.reservedSensor2 = 0.0f;
+
   settings.lastKnownUnixTime = 0;
 
   // Inicializacija currentData
@@ -125,6 +135,16 @@ void loadSettings() {
   settings.tempExtremeHighDS = prefs.getFloat("tempExtremeHighDS", 30.0f);
   settings.tempExtremeLowDS = prefs.getFloat("tempExtremeLowDS", -10.0f);
   settings.humExtremeHighDS = prefs.getFloat("humExtremeHighDS", 80.0f);
+
+  // Load sensor offsets
+  settings.bmeTempOffset = prefs.getFloat("bmeTempOffset", 0.0f);
+  settings.bmeHumidityOffset = prefs.getFloat("bmeHumidityOffset", 0.0f);
+  settings.bmePressureOffset = prefs.getFloat("bmePressureOffset", 0.0f);
+  settings.shtTempOffset = prefs.getFloat("shtTempOffset", 0.0f);
+  settings.shtHumidityOffset = prefs.getFloat("shtHumidityOffset", 0.0f);
+  settings.reservedSensor1 = prefs.getFloat("reservedSensor1", 0.0f);
+  settings.reservedSensor2 = prefs.getFloat("reservedSensor2", 0.0f);
+
   settings.lastKnownUnixTime = prefs.getULong("lastKnownUnixTime", 0);
 
   // Preberi shranjen CRC
@@ -159,9 +179,22 @@ void loadSettings() {
   memcpy(crcData + offset, &settings.tempExtremeHighDS, sizeof(settings.tempExtremeHighDS)); offset += sizeof(settings.tempExtremeHighDS);
   memcpy(crcData + offset, &settings.tempExtremeLowDS, sizeof(settings.tempExtremeLowDS)); offset += sizeof(settings.tempExtremeLowDS);
   memcpy(crcData + offset, &settings.humExtremeHighDS, sizeof(settings.humExtremeHighDS)); offset += sizeof(settings.humExtremeHighDS);
+
+  // Add sensor offsets to CRC
+  memcpy(crcData + offset, &settings.bmeTempOffset, sizeof(settings.bmeTempOffset)); offset += sizeof(settings.bmeTempOffset);
+  memcpy(crcData + offset, &settings.bmeHumidityOffset, sizeof(settings.bmeHumidityOffset)); offset += sizeof(settings.bmeHumidityOffset);
+  memcpy(crcData + offset, &settings.bmePressureOffset, sizeof(settings.bmePressureOffset)); offset += sizeof(settings.bmePressureOffset);
+  memcpy(crcData + offset, &settings.shtTempOffset, sizeof(settings.shtTempOffset)); offset += sizeof(settings.shtTempOffset);
+  memcpy(crcData + offset, &settings.shtHumidityOffset, sizeof(settings.shtHumidityOffset)); offset += sizeof(settings.shtHumidityOffset);
+  memcpy(crcData + offset, &settings.reservedSensor1, sizeof(settings.reservedSensor1)); offset += sizeof(settings.reservedSensor1);
+  memcpy(crcData + offset, &settings.reservedSensor2, sizeof(settings.reservedSensor2)); offset += sizeof(settings.reservedSensor2);
+
   memcpy(crcData + offset, &settings.lastKnownUnixTime, sizeof(settings.lastKnownUnixTime)); offset += sizeof(settings.lastKnownUnixTime);
 
   uint16_t calculated_crc = calculateCRC(crcData, offset);
+
+  LOG_INFO("Settings", "Prebran shranjen CRC: 0x%04X", stored_crc);
+  LOG_INFO("Settings", "Izračunan CRC: 0x%04X", calculated_crc);
 
   if (calculated_crc != stored_crc) {
     LOG_WARN("Settings", "CRC neustreza (izračunan: 0x%04X, shranjen: 0x%04X) - naložene in shranjene privzete nastavitve v NVS z novim CRC-jem", calculated_crc, stored_crc);
@@ -200,6 +233,16 @@ void saveSettings() {
   prefs.putFloat("tempExtremeHighDS", settings.tempExtremeHighDS);
   prefs.putFloat("tempExtremeLowDS", settings.tempExtremeLowDS);
   prefs.putFloat("humExtremeHighDS", settings.humExtremeHighDS);
+
+  // Save sensor offsets
+  prefs.putFloat("bmeTempOffset", settings.bmeTempOffset);
+  prefs.putFloat("bmeHumidityOffset", settings.bmeHumidityOffset);
+  prefs.putFloat("bmePressureOffset", settings.bmePressureOffset);
+  prefs.putFloat("shtTempOffset", settings.shtTempOffset);
+  prefs.putFloat("shtHumidityOffset", settings.shtHumidityOffset);
+  prefs.putFloat("reservedSensor1", settings.reservedSensor1);
+  prefs.putFloat("reservedSensor2", settings.reservedSensor2);
+
   prefs.putULong("lastKnownUnixTime", settings.lastKnownUnixTime);
 
   // Izračunaj in shrani CRC za validacijo (na podlagi posameznih polj, ne struct memory)
@@ -230,12 +273,23 @@ void saveSettings() {
   memcpy(crcData + offset, &settings.tempExtremeHighDS, sizeof(settings.tempExtremeHighDS)); offset += sizeof(settings.tempExtremeHighDS);
   memcpy(crcData + offset, &settings.tempExtremeLowDS, sizeof(settings.tempExtremeLowDS)); offset += sizeof(settings.tempExtremeLowDS);
   memcpy(crcData + offset, &settings.humExtremeHighDS, sizeof(settings.humExtremeHighDS)); offset += sizeof(settings.humExtremeHighDS);
+
+  // Add sensor offsets to CRC
+  memcpy(crcData + offset, &settings.bmeTempOffset, sizeof(settings.bmeTempOffset)); offset += sizeof(settings.bmeTempOffset);
+  memcpy(crcData + offset, &settings.bmeHumidityOffset, sizeof(settings.bmeHumidityOffset)); offset += sizeof(settings.bmeHumidityOffset);
+  memcpy(crcData + offset, &settings.bmePressureOffset, sizeof(settings.bmePressureOffset)); offset += sizeof(settings.bmePressureOffset);
+  memcpy(crcData + offset, &settings.shtTempOffset, sizeof(settings.shtTempOffset)); offset += sizeof(settings.shtTempOffset);
+  memcpy(crcData + offset, &settings.shtHumidityOffset, sizeof(settings.shtHumidityOffset)); offset += sizeof(settings.shtHumidityOffset);
+  memcpy(crcData + offset, &settings.reservedSensor1, sizeof(settings.reservedSensor1)); offset += sizeof(settings.reservedSensor1);
+  memcpy(crcData + offset, &settings.reservedSensor2, sizeof(settings.reservedSensor2)); offset += sizeof(settings.reservedSensor2);
+
   memcpy(crcData + offset, &settings.lastKnownUnixTime, sizeof(settings.lastKnownUnixTime)); offset += sizeof(settings.lastKnownUnixTime);
 
   uint16_t crc = calculateCRC(crcData, offset);
   prefs.putUShort("settings_crc", crc);
 
   prefs.end();
+  LOG_INFO("Settings", "Shranjen nov CRC: 0x%04X", crc);
 }
 
 bool isIdle(void) {

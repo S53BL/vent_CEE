@@ -85,9 +85,9 @@ void initSensors() {
 
         if (init_success) {
             // Try test read to verify sensor works
-            float temp = bme280->readTemperature();
-            float hum = bme280->readHumidity() + BME_HUMIDITY_OFFSET;
-            float press = bme280->readPressure() / 100.0;
+            float temp = bme280->readTemperature() + settings.bmeTempOffset;
+            float hum = bme280->readHumidity() + settings.bmeHumidityOffset;
+            float press = bme280->readPressure() / 100.0 + settings.bmePressureOffset;
 
             if (temp >= 0.0f && temp <= 50.0f &&
                 hum >= 10.0f && hum <= 100.0f &&
@@ -195,8 +195,8 @@ bool readSHT41(float* temp, float* hum, float* press) {
     if (!sht41) return false;
     sensors_event_t humidity, temperature;
     sht41->getEvent(&humidity, &temperature);
-    *temp = temperature.temperature;
-    *hum = humidity.relative_humidity;
+    *temp = temperature.temperature + settings.shtTempOffset;
+    *hum = humidity.relative_humidity + settings.shtHumidityOffset;
     *press = -999.0f; // SHT41 doesn't measure pressure
     return true;
 }
@@ -204,9 +204,9 @@ bool readSHT41(float* temp, float* hum, float* press) {
 // Callback function for BME280 reading
 bool readBME280(float* temp, float* hum, float* press) {
     if (!bme280) return false;
-    *temp = bme280->readTemperature();
-    *hum = bme280->readHumidity() + BME_HUMIDITY_OFFSET;
-    *press = bme280->readPressure() / 100.0;
+    *temp = bme280->readTemperature() + settings.bmeTempOffset;
+    *hum = bme280->readHumidity() + settings.bmeHumidityOffset;
+    *press = bme280->readPressure() / 100.0 + settings.bmePressureOffset;
     return true;
 }
 
@@ -380,9 +380,9 @@ void performPeriodicSensorCheck() {
 
             if (init_success) {
                 // Try test read to verify sensor works
-                float temp = bme280->readTemperature();
-                float hum = bme280->readHumidity() + BME_HUMIDITY_OFFSET;
-                float press = bme280->readPressure() / 100.0;
+                float temp = bme280->readTemperature() + settings.bmeTempOffset;
+                float hum = bme280->readHumidity() + settings.bmeHumidityOffset;
+                float press = bme280->readPressure() / 100.0 + settings.bmePressureOffset;
 
                 if (temp >= 0.0f && temp <= 50.0f &&
                     hum >= 10.0f && hum <= 100.0f &&
