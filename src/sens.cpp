@@ -282,6 +282,11 @@ void readSensors() {
         currentData.errorFlags &= ~ERR_POWER;
     }
 
+    // Check DEW error
+    currentData.dewError = 0;
+    if (!utDewStatus.isOnline) currentData.dewError |= 1;
+    if (!kopDewStatus.isOnline) currentData.dewError |= 2;
+
     // Log local sensors only
     LOG_INFO("Sensors", "UT: T=%.1f°C H=%.1f%% KOP: T=%.1f°C H=%.1f%% P=%.1fhPa 5V=%.3fV 3.3V=%.3fV",
              currentData.utilityTemp, currentData.utilityHumidity,

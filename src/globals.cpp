@@ -25,6 +25,7 @@ DeviceStatus kopDewStatus = {false};
 ExternalData externalData;
 Settings settings;
 CurrentData currentData;
+int currentWeatherIcon = 0;
 
 Adafruit_BME280 *bme280 = nullptr;
 Adafruit_SHT4x *sht41 = nullptr;
@@ -50,6 +51,19 @@ uint16_t calculateCRC(const uint8_t* data, size_t len) {
     }
   }
   return crc;
+}
+
+void hexdumpCRCData(const uint8_t* data, size_t len, const char* label) {
+  LOG_INFO("Hexdump", "=== %s ===", label);
+  for (size_t i = 0; i < len; i += 16) {
+    char line[80];
+    sprintf(line, "%04X: ", (uint16_t)i);
+    for (size_t j = 0; j < 16 && i + j < len; j++) {
+      sprintf(line + strlen(line), "%02X ", data[i + j]);
+    }
+    LOG_INFO("Hexdump", "%s", line);
+  }
+  LOG_INFO("Hexdump", "=== END %s ===", label);
 }
 
 void initDefaults() {
@@ -100,10 +114,10 @@ void loadSettings() {
   }
 
   Preferences prefs;
-  prefs.begin("vent", true);
+  prefs.begin("settings", true);
 
   // Preveri marker za validacijo podatkov
-  uint8_t marker = prefs.getUChar("marker", 0);
+  uint8_t marker = prefs.getUChar("marker", 0x00);
   if (marker != SETTINGS_MARKER) {
     LOG_INFO("Settings", "Marker neveljaven (prebran: 0x%02X, pričakovan: 0x%02X) - uporabljene privzete nastavitve, shranjene v NVS", marker, SETTINGS_MARKER);
     prefs.end();
@@ -112,53 +126,26 @@ void loadSettings() {
     return;
   }
 
-  // Preberi nastavitve iz NVS
-  settings.humThreshold = prefs.getFloat("humThreshold", 60.0f);
-  settings.fanDuration = prefs.getUInt("fanDuration", 180);
-  settings.fanOffDuration = prefs.getUInt("fanOffDuration", 1200);
-  settings.fanOffDurationKop = prefs.getUInt("fanOffDurationKop", 1200);
-  settings.tempLowThreshold = prefs.getFloat("tempLowThreshold", 5.0f);
-  settings.tempMinThreshold = prefs.getFloat("tempMinThreshold", -10.0f);
-  settings.dndAllowableAutomatic = prefs.getUChar("dndAllowableAutomatic", 1) != 0;
-  settings.dndAllowableSemiautomatic = prefs.getUChar("dndAllowableSemiautomatic", 1) != 0;
-  settings.dndAllowableManual = prefs.getUChar("dndAllowableManual", 1) != 0;
-  settings.cycleDurationDS = prefs.getUInt("cycleDurationDS", 60);
-  settings.cycleActivePercentDS = prefs.getFloat("cycleActivePercentDS", 30.0f);
-  settings.humThresholdDS = prefs.getFloat("humThresholdDS", 60.0f);
-  settings.humThresholdHighDS = prefs.getFloat("humThresholdHighDS", 70.0f);
-  settings.co2ThresholdLowDS = prefs.getUInt("co2ThresholdLowDS", 900);
-  settings.co2ThresholdHighDS = prefs.getUInt("co2ThresholdHighDS", 1200);
-  settings.incrementPercentLowDS = prefs.getFloat("incrementPercentLowDS", 15.0f);
-  settings.incrementPercentHighDS = prefs.getFloat("incrementPercentHighDS", 50.0f);
-  settings.incrementPercentTempDS = prefs.getFloat("incrementPercentTempDS", 20.0f);
-  settings.tempIdealDS = prefs.getFloat("tempIdealDS", 24.0f);
-  settings.tempExtremeHighDS = prefs.getFloat("tempExtremeHighDS", 30.0f);
-  settings.tempExtremeLowDS = prefs.getFloat("tempExtremeLowDS", -10.0f);
-  settings.humExtremeHighDS = prefs.getFloat("humExtremeHighDS", 80.0f);
-
-  // Load sensor offsets
-  settings.bmeTempOffset = prefs.getFloat("bmeTempOffset", 0.0f);
-  settings.bmeHumidityOffset = prefs.getFloat("bmeHumidityOffset", 0.0f);
-  settings.bmePressureOffset = prefs.getFloat("bmePressureOffset", 0.0f);
-  settings.shtTempOffset = prefs.getFloat("shtTempOffset", 0.0f);
-  settings.shtHumidityOffset = prefs.getFloat("shtHumidityOffset", 0.0f);
-  settings.reservedSensor1 = prefs.getFloat("reservedSensor1", 0.0f);
-  settings.reservedSensor2 = prefs.getFloat("reservedSensor2", 0.0f);
-
-  settings.lastKnownUnixTime = prefs.getULong("lastKnownUnixTime", 0);
-
-  // Preberi shranjen CRC
+  // Preberi nastavitve kot blob
+  size_t bytesRead = prefs.getBytes("settings", (uint8_t*)&settings, sizeof(Settings));
   uint16_t stored_crc = prefs.getUShort("settings_crc", 0);
   prefs.end();
 
-  // Izračunaj CRC prebranih nastavitev (na podlagi struct memory)
-  uint8_t crcData[sizeof(Settings)];
-  memset(crcData, 0, sizeof(Settings));
-  memcpy(crcData, &settings, sizeof(Settings));
-  uint16_t calculated_crc = calculateCRC(crcData, sizeof(Settings));
+  if (bytesRead != sizeof(Settings)) {
+    LOG_WARN("Settings", "Neveljavna velikost podatkov (%d != %d), uporabljene privzete nastavitve", bytesRead, sizeof(Settings));
+    initDefaults();
+    saveSettings();
+    return;
+  }
 
-  LOG_INFO("Settings", "Prebran shranjen CRC: 0x%04X", stored_crc);
-  LOG_INFO("Settings", "Izračunan CRC: 0x%04X", calculated_crc);
+  // Dodaj LOG_INFO za prebrana ključna polja
+  LOG_INFO("Settings", "Prebrano: humThreshold=%.1f, fanDuration=%d, lastKnownUnixTime=%lu", settings.humThreshold, settings.fanDuration, settings.lastKnownUnixTime);
+
+  // Dodaj hexdump
+  hexdumpCRCData((const uint8_t*)&settings, sizeof(Settings), "loadSettings");
+
+  // Izračunaj CRC
+  uint16_t calculated_crc = calculateCRC((const uint8_t*)&settings, sizeof(Settings));
 
   if (calculated_crc != stored_crc) {
     LOG_WARN("Settings", "CRC neustreza (izračunan: 0x%04X, shranjen: 0x%04X) - naložene in shranjene privzete nastavitve v NVS z novim CRC-jem", calculated_crc, stored_crc);
@@ -171,53 +158,30 @@ void loadSettings() {
 
 void saveSettings() {
   if (!useNVS) return;
+
+  // Dodaj LOG_INFO za vsa shranjena polja
+  LOG_INFO("Settings", "Shranjujem: humThreshold=%.1f, fanDuration=%d, fanOffDuration=%d, fanOffDurationKop=%d, tempLowThreshold=%.1f, tempMinThreshold=%.1f, dndAllowableAutomatic=%d, dndAllowableSemiautomatic=%d, dndAllowableManual=%d, cycleDurationDS=%d, cycleActivePercentDS=%.1f, humThresholdDS=%.1f, humThresholdHighDS=%.1f, co2ThresholdLowDS=%d, co2ThresholdHighDS=%d, incrementPercentLowDS=%.1f, incrementPercentHighDS=%.1f, incrementPercentTempDS=%.1f, tempIdealDS=%.1f, tempExtremeHighDS=%.1f, tempExtremeLowDS=%.1f, humExtremeHighDS=%.1f, bmeTempOffset=%.1f, bmeHumidityOffset=%.1f, bmePressureOffset=%.1f, shtTempOffset=%.1f, shtHumidityOffset=%.1f, reservedSensor1=%.1f, reservedSensor2=%.1f, lastKnownUnixTime=%lu",
+           settings.humThreshold, settings.fanDuration, settings.fanOffDuration, settings.fanOffDurationKop, settings.tempLowThreshold, settings.tempMinThreshold, settings.dndAllowableAutomatic, settings.dndAllowableSemiautomatic, settings.dndAllowableManual, settings.cycleDurationDS, settings.cycleActivePercentDS, settings.humThresholdDS, settings.humThresholdHighDS, settings.co2ThresholdLowDS, settings.co2ThresholdHighDS, settings.incrementPercentLowDS, settings.incrementPercentHighDS, settings.incrementPercentTempDS, settings.tempIdealDS, settings.tempExtremeHighDS, settings.tempExtremeLowDS, settings.humExtremeHighDS, settings.bmeTempOffset, settings.bmeHumidityOffset, settings.bmePressureOffset, settings.shtTempOffset, settings.shtHumidityOffset, settings.reservedSensor1, settings.reservedSensor2, settings.lastKnownUnixTime);
+
+  // Dodaj hexdump pred CRC
+  hexdumpCRCData((const uint8_t*)&settings, sizeof(Settings), "saveSettings");
+
   Preferences prefs;
-  prefs.begin("vent", false);
-  // Shrani marker za validacijo
+  prefs.begin("settings", false);
+
+  // Shrani marker
   prefs.putUChar("marker", SETTINGS_MARKER);
-  prefs.putFloat("humThreshold", settings.humThreshold);
-  prefs.putUInt("fanDuration", settings.fanDuration);
-  prefs.putUInt("fanOffDuration", settings.fanOffDuration);
-  prefs.putUInt("fanOffDurationKop", settings.fanOffDurationKop);
-  prefs.putFloat("tempLowThreshold", settings.tempLowThreshold);
-  prefs.putFloat("tempMinThreshold", settings.tempMinThreshold);
-  prefs.putUChar("dndAllowableAutomatic", settings.dndAllowableAutomatic ? 1 : 0);
-  prefs.putUChar("dndAllowableSemiautomatic", settings.dndAllowableSemiautomatic ? 1 : 0);
-  prefs.putUChar("dndAllowableManual", settings.dndAllowableManual ? 1 : 0);
-  prefs.putUInt("cycleDurationDS", settings.cycleDurationDS);
-  prefs.putFloat("cycleActivePercentDS", settings.cycleActivePercentDS);
-  prefs.putFloat("humThresholdDS", settings.humThresholdDS);
-  prefs.putFloat("humThresholdHighDS", settings.humThresholdHighDS);
-  prefs.putUInt("co2ThresholdLowDS", settings.co2ThresholdLowDS);
-  prefs.putUInt("co2ThresholdHighDS", settings.co2ThresholdHighDS);
-  prefs.putFloat("incrementPercentLowDS", settings.incrementPercentLowDS);
-  prefs.putFloat("incrementPercentHighDS", settings.incrementPercentHighDS);
-  prefs.putFloat("incrementPercentTempDS", settings.incrementPercentTempDS);
-  prefs.putFloat("tempIdealDS", settings.tempIdealDS);
-  prefs.putFloat("tempExtremeHighDS", settings.tempExtremeHighDS);
-  prefs.putFloat("tempExtremeLowDS", settings.tempExtremeLowDS);
-  prefs.putFloat("humExtremeHighDS", settings.humExtremeHighDS);
 
-  // Save sensor offsets
-  prefs.putFloat("bmeTempOffset", settings.bmeTempOffset);
-  prefs.putFloat("bmeHumidityOffset", settings.bmeHumidityOffset);
-  prefs.putFloat("bmePressureOffset", settings.bmePressureOffset);
-  prefs.putFloat("shtTempOffset", settings.shtTempOffset);
-  prefs.putFloat("shtHumidityOffset", settings.shtHumidityOffset);
-  prefs.putFloat("reservedSensor1", settings.reservedSensor1);
-  prefs.putFloat("reservedSensor2", settings.reservedSensor2);
+  // Shrani nastavitve kot blob
+  prefs.putBytes("settings", (const uint8_t*)&settings, sizeof(Settings));
 
-  prefs.putULong("lastKnownUnixTime", settings.lastKnownUnixTime);
-
-  // Izračunaj in shrani CRC za validacijo (na podlagi struct memory)
-  uint8_t crcData[sizeof(Settings)];
-  memset(crcData, 0, sizeof(Settings));
-  memcpy(crcData, &settings, sizeof(Settings));
-  uint16_t crc = calculateCRC(crcData, sizeof(Settings));
+  // Izračunaj in shrani CRC
+  uint16_t crc = calculateCRC((const uint8_t*)&settings, sizeof(Settings));
   prefs.putUShort("settings_crc", crc);
 
   prefs.end();
-  LOG_INFO("Settings", "Shranjen nov CRC: 0x%04X", crc);
+
+  LOG_INFO("Settings", "Shranjen CRC: 0x%04X", crc);
 }
 
 bool isIdle(void) {

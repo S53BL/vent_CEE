@@ -71,8 +71,8 @@ const bool useNVS = true; // true za produkcijo
 #define STATUS_UPDATE_INTERVAL 300000UL // Interval za STATUS_UPDATE (5 minut v ms)
 #define ERR_BME280 0x01
 #define ERR_SHT41 0x02
-#define ERR_LITTLEFS 0x04
-#define ERR_HTTP 0x20
+#define ERR_DEW 0x08
+#define ERR_TIME_SYNC 0x10
 #define ERR_POWER 0x40
 #define TZ_STRING "CET-1CEST,M3.5.0/2,M10.5.0/3"  // POSIX za CET
 
@@ -146,6 +146,7 @@ struct ExternalData {
     float livingTempDS;
     float livingHumidityDS;
     uint16_t livingCO2;
+    int weatherIcon;
     uint32_t timestamp;
 };
 struct CurrentData {
@@ -187,6 +188,7 @@ struct CurrentData {
     bool manualTriggerLivingRoom;
     bool disableWc;
     uint8_t errorFlags;
+    uint8_t dewError;
     uint32_t timestamp;
     uint32_t offTimes[6]; // Dodano za STATUS_UPDATE: časi izklopa ventilatorjev
     uint8_t previousFans[6];

@@ -44,8 +44,6 @@ String getErrorDescription(uint8_t errorFlags) {
     String errors = "";
     if (errorFlags & ERR_BME280) errors += "Senzor BME280 nedelujoč<br>";
     if (errorFlags & ERR_SHT41) errors += "Senzor SHT41 nedelujoč<br>";
-    if (errorFlags & ERR_LITTLEFS) errors += "LittleFS napaka<br>";
-    if (errorFlags & ERR_HTTP) errors += "HTTP napaka<br>";
     if (errorFlags & ERR_POWER) errors += "Napajalna napaka<br>";
     if (errors == "") errors = "Brez napak";
     return errors;
@@ -148,6 +146,7 @@ void handleSensorData(AsyncWebServerRequest *request, uint8_t *data, size_t len,
         externalData.livingTempDS = doc[FIELD_DS_TEMP] | 0.0f;           // ds temp (living room)
         externalData.livingHumidityDS = doc[FIELD_DS_HUM] | 0.0f;       // ds humidity
         externalData.livingCO2 = doc[FIELD_DS_CO2] | 0;                 // ds CO2
+        externalData.weatherIcon = doc[FIELD_WEATHER_ICON] | 0;          // weather icon
         externalData.timestamp = doc[FIELD_TIMESTAMP] | 0;                 // timestamp
 
         // Update currentData for immediate use by vent control logic
@@ -157,6 +156,9 @@ void handleSensorData(AsyncWebServerRequest *request, uint8_t *data, size_t len,
         currentData.livingTemp = externalData.livingTempDS;
         currentData.livingHumidity = externalData.livingHumidityDS;
         currentData.livingCO2 = externalData.livingCO2;
+
+        // Update weather icon
+        currentWeatherIcon = externalData.weatherIcon;
 
         // Update external data validation
         if (timeSynced) {
@@ -1350,6 +1352,10 @@ void handleRoot(AsyncWebServerRequest *request) {
                 <span class="status-label">Svetloba:</span>
                 <span class="status-value" id="ext-light">)rawliteral" + String(currentData.externalLight, 1) + R"rawliteral( lux</span>
             </div>
+            <div class="status-item">
+                <span class="status-label">Ikona:</span>
+                <span class="status-value" id="ext-weather-icon">)rawliteral" + String(currentWeatherIcon) + R"rawliteral(</span>
+            </div>
         </div>
 
         <!-- Power Card -->
@@ -1373,19 +1379,6 @@ void handleRoot(AsyncWebServerRequest *request) {
             </div>
         </div>
 
-        <!-- Network Card -->
-        <div class="card">
-            <h2>Omrežje</h2>
-            <div class="status-item">
-                <span class="status-label">NTP sinhronizacija:</span>
-                <span class="status-value" id="net-ntp">)rawliteral" + (timeSynced ? "DA" : "NE") + R"rawliteral(</span>
-            </div>
-            <div class="status-item">
-                <span class="status-label">Zunanji podatki:</span>
-                <span class="status-value" id="net-external">)rawliteral" + (externalDataValid ? "VELJAVNI" : "NEVELJAVNI") + R"rawliteral(</span>
-            </div>
-        </div>
-
         <!-- System Card -->
         <div class="card">
             <h2>Sistem</h2>
@@ -1403,27 +1396,47 @@ void handleRoot(AsyncWebServerRequest *request) {
             </div>
         </div>
 
-        <!-- Devices Card -->
+        <!-- Status Card -->
         <div class="card">
-            <h2>Naprave</h2>
-            <div class="status-item">
-                <span class="status-label">REW:</span>
-                <span class="status-value" id="dev-rew">)rawliteral" + (rewStatus.isOnline ? "ONLINE" : "OFFLINE") + R"rawliteral(</span>
+            <h2>Status</h2>
+            <div id="status-content" class="status-value">
+                <div class="status-item">
+                    <span class="status-label">Zunanji podatki:</span>
+                    <span class="status-value" id="status-external">)rawliteral" + (externalDataValid ? "VELJAVNI" : "NEVELJAVNI") + R"rawliteral(</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Senzor BME280:</span>
+                    <span class="status-value" id="status-bme280">)rawliteral" + ((currentData.errorFlags & ERR_BME280) ? "NAPAKA" : "OK") + R"rawliteral(</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Senzor SHT41:</span>
+                    <span class="status-value" id="status-sht41">)rawliteral" + ((currentData.errorFlags & ERR_SHT41) ? "NAPAKA" : "OK") + R"rawliteral(</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Napajanje:</span>
+                    <span class="status-value" id="status-power">)rawliteral" + ((currentData.errorFlags & ERR_POWER) ? "NAPAKA" : "OK") + R"rawliteral(</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">NTP sinhronizacija:</span>
+                    <span class="status-value" id="status-ntp">)rawliteral" + (timeSynced ? "OK" : "NESINHRONIZIRAN") + R"rawliteral(</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Čas z REW:</span>
+                    <span class="status-value" id="status-time-rew">)rawliteral" + (externalDataValid && timeSynced && abs((int32_t)(myTZ.now() - externalData.timestamp)) <= 300 ? "OK" : "RAZHAJANJE >5min") + R"rawliteral(</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">REW:</span>
+                    <span class="status-value" id="status-rew">)rawliteral" + (rewStatus.isOnline ? "ONLINE" : "OFFLINE") + R"rawliteral(</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">UT_DEW:</span>
+                    <span class="status-value" id="status-ut-dew">)rawliteral" + (utDewStatus.isOnline ? "ONLINE" : "OFFLINE") + R"rawliteral(</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">KOP_DEW:</span>
+                    <span class="status-value" id="status-kop-dew">)rawliteral" + (kopDewStatus.isOnline ? "ONLINE" : "OFFLINE") + R"rawliteral(</span>
+                </div>
             </div>
-            <div class="status-item">
-                <span class="status-label">UT_DEW:</span>
-                <span class="status-value" id="dev-ut-dew">)rawliteral" + (utDewStatus.isOnline ? "ONLINE" : "OFFLINE") + R"rawliteral(</span>
-            </div>
-            <div class="status-item">
-                <span class="status-label">KOP_DEW:</span>
-                <span class="status-value" id="dev-kop-dew">)rawliteral" + (kopDewStatus.isOnline ? "ONLINE" : "OFFLINE") + R"rawliteral(</span>
-            </div>
-        </div>
-
-        <!-- Errors Card -->
-        <div class="card">
-            <h2>Napake</h2>
-            <div id="errors-content" class="status-value">)rawliteral" + getErrorDescription(currentData.errorFlags) + R"rawliteral(</div>
         </div>
     </div>
 
@@ -1486,23 +1499,21 @@ void handleRoot(AsyncWebServerRequest *request) {
                     document.getElementById("power-current").textContent = data.current_power + " W";
                     document.getElementById("power-energy").textContent = data.energy_consumption + " Wh";
 
-                    // Update network data
-                    document.getElementById("net-ntp").textContent = data.time_synced ? "DA" : "NE";
-                    document.getElementById("net-external").textContent = data.external_data_valid ? "VELJAVNI" : "NEVELJAVNI";
-
                     // Update system data
                     document.getElementById("sys-ram").textContent = data.ram_percent + " %";
                     document.getElementById("sys-uptime").textContent = data.uptime;
                     document.getElementById("sys-log").textContent = data.log_buffer_size + " B";
 
-                    // Update devices data
-                    document.getElementById("dev-rew").textContent = data.rew_online ? "ONLINE" : "OFFLINE";
-                    document.getElementById("dev-ut-dew").textContent = data.ut_dew_online ? "ONLINE" : "OFFLINE";
-                    document.getElementById("dev-kop-dew").textContent = data.kop_dew_online ? "ONLINE" : "OFFLINE";
-
-                    // Update errors
-                    const errorDesc = getErrorDescription(data.error_flags);
-                    document.getElementById("errors-content").innerHTML = errorDesc;
+                    // Update status items
+                    document.getElementById("status-external").textContent = data.external_data_valid ? "VELJAVNI" : "NEVELJAVNI";
+                    document.getElementById("status-bme280").textContent = (data.error_flags & 1) ? "NAPAKA" : "OK";
+                    document.getElementById("status-sht41").textContent = (data.error_flags & 2) ? "NAPAKA" : "OK";
+                    document.getElementById("status-power").textContent = (data.error_flags & 64) ? "NAPAKA" : "OK";
+                    document.getElementById("status-ntp").textContent = data.time_synced ? "OK" : "NESINHRONIZIRAN";
+                    document.getElementById("status-time-rew").textContent = (data.external_data_valid && data.time_synced && Math.abs(Date.now()/1000 - data.external_timestamp) <= 300) ? "OK" : "RAZHAJANJE >5min";
+                    document.getElementById("status-rew").textContent = data.rew_online ? "ONLINE" : "OFFLINE";
+                    document.getElementById("status-ut-dew").textContent = data.ut_dew_online ? "ONLINE" : "OFFLINE";
+                    document.getElementById("status-kop-dew").textContent = data.kop_dew_online ? "ONLINE" : "OFFLINE";
                 })
                 .catch(error => console.error('Napaka pri osveževanju:', error));
         }
@@ -1511,8 +1522,6 @@ void handleRoot(AsyncWebServerRequest *request) {
             let errors = "";
             if (errorFlags & 1) errors += "Senzor BME280 nedelujoč<br>";
             if (errorFlags & 2) errors += "Senzor SHT41 nedelujoč<br>";
-            if (errorFlags & 4) errors += "LittleFS napaka<br>";
-            if (errorFlags & 32) errors += "HTTP napaka<br>";
             if (errorFlags & 64) errors += "Napajalna napaka<br>";
             if (errors === "") errors = "Brez napak";
             return errors;
@@ -1730,6 +1739,7 @@ void handleCurrentDataRequest(AsyncWebServerRequest *request) {
                 String("\"rew_online\":") + String(rewStatus.isOnline ? "true" : "false") + "," +
                 String("\"ut_dew_online\":") + String(utDewStatus.isOnline ? "true" : "false") + "," +
                 String("\"kop_dew_online\":") + String(kopDewStatus.isOnline ? "true" : "false") + "," +
+                String("\"external_timestamp\":") + String(externalData.timestamp) + "," +
                 String("\"error_flags\":") + String((int)currentData.errorFlags) +
                 "}";
 

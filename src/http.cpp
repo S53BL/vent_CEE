@@ -21,10 +21,10 @@ bool sendStatusUpdate() {
     // Create JSON payload with short field names
     DynamicJsonDocument doc(512);
 
-    // Fans (0=off, 1=on, 2=disabled)
-    doc["fwc"] = currentData.wcFan ? 1 : 0;  // fan wc
-    doc["fut"] = currentData.utilityFan ? (currentData.disableUtility ? 2 : 1) : 0;   // fan utility
-    doc["fkop"] = currentData.bathroomFan ? (currentData.disableBathroom ? 2 : 1) : 0; // fan bathroom
+    // Fans (0=off, 1=on, 9=disabled)
+    doc["fwc"] = currentData.wcFan ? (currentData.disableWc ? 9 : 1) : 0;  // fan wc
+    doc["fut"] = currentData.utilityFan ? (currentData.disableUtility ? 9 : 1) : 0;   // fan utility
+    doc["fkop"] = currentData.bathroomFan ? (currentData.disableBathroom ? 9 : 1) : 0; // fan bathroom
     // fdse: 0=off, 1=level1, 2=level2, 3=level3, 9=disabled
     if (currentData.disableLivingRoom) {
         doc["fdse"] = 9;  // disabled
@@ -55,9 +55,23 @@ bool sendStatusUpdate() {
     // Error flags (0=ok, 1=error)
     doc["ebm"] = currentData.errorFlags & ERR_BME280 ? 1 : 0;   // error bme280
     doc["esht"] = currentData.errorFlags & ERR_SHT41 ? 1 : 0;   // error sht41
-    doc["elfs"] = 0;  // error littlefs (not implemented)
-    doc["ehtp"] = 0;  // error http (not implemented)
-    doc["esd"] = 0;   // error sd (not implemented)
+    doc["epwr"] = currentData.errorFlags & ERR_POWER ? 1 : 0;   // error power
+    doc["edew"] = currentData.dewError;   // error dew
+    // Time sync error detection
+    uint8_t timeSyncError = 0;
+    if (!timeSynced) {
+        timeSyncError = 1;  // NTP not synchronized
+    } else if (externalDataValid) {
+        // Check time difference with REW
+        uint32_t currentTime = myTZ.now();
+        uint32_t timeDiff = abs((int32_t)(currentTime - externalData.timestamp));
+        if (timeDiff > 300) {  // 5 minutes = 300 seconds
+            timeSyncError = 2;  // Time discrepancy >5min
+        }
+        // else timeSyncError = 0;  // All OK
+    }
+    // If externalDataValid is false, we can't check discrepancy, so assume OK if NTP is synced
+    doc["etms"] = timeSyncError;   // error time sync (0=OK, 1=NTP unsync, 2=time discrepancy)
 
     // Sensor data
     doc["tbat"] = currentData.bathroomTemp;      // temperature bathroom
@@ -102,12 +116,14 @@ bool sendDewUpdate(const char* room) {
         doc["dt"] = currentData.utilityTemp;               // dew temp
         doc["dh"] = currentData.utilityHumidity;           // dew hum
         doc["de"] = currentData.errorFlags & ERR_SHT41 ? 1 : 0;  // dew err
+        doc["wi"] = currentWeatherIcon;                    // weather icon
     } else if (strcmp(room, "KOP") == 0) {
         doc["df"] = currentData.bathroomFan ? 1 : 0;       // dew fan
         doc["do"] = currentData.offTimes[0];               // dew off (timestamp)
         doc["dt"] = currentData.bathroomTemp;              // dew temp
         doc["dh"] = currentData.bathroomHumidity;          // dew hum
         doc["de"] = currentData.errorFlags & ERR_BME280 ? 1 : 0; // dew err
+        doc["wi"] = currentWeatherIcon;                    // weather icon
     }
 
     String jsonString;
@@ -120,9 +136,9 @@ bool sendDewUpdate(const char* room) {
 // Check and send STATUS_UPDATE to REW when states change or periodically
 void checkAndSendStatusUpdate() {
     // Calculate current states for comparison
-    uint8_t currentFanWc = currentData.wcFan ? 1 : 0;
-    uint8_t currentFanUt = currentData.utilityFan ? (currentData.disableUtility ? 2 : 1) : 0;
-    uint8_t currentFanKop = currentData.bathroomFan ? (currentData.disableBathroom ? 2 : 1) : 0;
+    uint8_t currentFanWc = currentData.wcFan ? (currentData.disableWc ? 9 : 1) : 0;
+    uint8_t currentFanUt = currentData.utilityFan ? (currentData.disableUtility ? 9 : 1) : 0;
+    uint8_t currentFanKop = currentData.bathroomFan ? (currentData.disableBathroom ? 9 : 1) : 0;
     uint8_t currentFanDse = currentData.disableLivingRoom ? 9 : currentData.livingExhaustLevel;
     uint8_t currentFanDsi = currentData.commonIntake ? 1 : 0;
     uint8_t currentFanLiv = currentData.livingExhaustLevel > 0 ? 1 : 0;

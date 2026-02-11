@@ -28,9 +28,9 @@
 
 #define FIELD_ERROR_BME280        "ebm"   // error_bme280
 #define FIELD_ERROR_SHT41         "esht"  // error_sht41
-#define FIELD_ERROR_LITTLEFS      "elfs"  // error_littlefs
-#define FIELD_ERROR_HTTP          "ehtp"  // error_http
-#define FIELD_ERROR_SD            "esd"   // error_sd
+#define FIELD_ERROR_POWER         "epwr"  // error_power
+#define FIELD_ERROR_DEW           "edew"  // error_dew
+#define FIELD_ERROR_TIME_SYNC     "etms"  // error_time_sync
 
 #define FIELD_TEMP_BATHROOM       "tbat"  // temperature_bathroom
 #define FIELD_HUM_BATHROOM        "hbat"  // humidity_bathroom
@@ -48,6 +48,7 @@
 #define FIELD_DEW_TEMP            "dt"    // dew_temperature
 #define FIELD_DEW_HUM             "dh"    // dew_humidity
 #define FIELD_DEW_ERROR           "de"    // dew_error
+#define FIELD_WEATHER_ICON        "wi"    // weather_icon
 
 // SENSOR_DATA field names (REW → CEE)
 #define FIELD_EXT_TEMP            "et"    // external_temperature
@@ -56,6 +57,7 @@
 #define FIELD_DS_TEMP             "dt"    // ds_temperature
 #define FIELD_DS_HUM              "dh"    // ds_humidity
 #define FIELD_DS_CO2              "dc"    // ds_co2
+#define FIELD_WEATHER_ICON        "wi"    // weather_icon
 #define FIELD_TIMESTAMP           "ts"    // timestamp
 
 // MANUAL_CONTROL field names (REW → CEE)
