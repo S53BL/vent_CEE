@@ -49,6 +49,28 @@ String getErrorDescription(uint8_t errorFlags) {
     return errors;
 }
 
+String getSlovenianDateTime() {
+    if (!timeSynced) return "Čas ni sinhroniziran";
+
+    time_t now = myTZ.now();
+    struct tm *timeinfo = localtime(&now);
+
+    // Slovenian day names
+    const char* days[] = {"nedelja", "ponedeljek", "torek", "sreda", "četrtek", "petek", "sobota"};
+
+    char buffer[50];
+    snprintf(buffer, sizeof(buffer), "%s %02d-%s-%04d %02d:%02d:%02d",
+             days[timeinfo->tm_wday],
+             timeinfo->tm_mday,
+             timeinfo->tm_mon + 1 < 10 ? String("0") + String(timeinfo->tm_mon + 1) : String(timeinfo->tm_mon + 1),
+             timeinfo->tm_year + 1900,
+             timeinfo->tm_hour,
+             timeinfo->tm_min,
+             timeinfo->tm_sec);
+
+    return String(buffer);
+}
+
 AsyncWebServer server(80);
 
 // HTTP endpoint handlers
@@ -187,6 +209,105 @@ const char* HTML_SETTINGS = R"rawliteral(
             font-size: 16px;
             background: #101010;
             color: #e0e0e0;
+            display: flex;
+        }
+        .sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 160px;
+            height: 100vh;
+            background: #1a1a1a;
+            border: 1px solid #333;
+            border-radius: 0;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            overflow-y: auto;
+            z-index: 1000;
+        }
+        .sidebar h2 {
+            color: #4da6ff;
+            margin-top: 0;
+            margin-bottom: 20px;
+            font-size: 18px;
+            text-align: center;
+            border-bottom: 2px solid #4da6ff;
+            padding-bottom: 5px;
+        }
+        .sidebar .nav-button {
+            display: block;
+            width: 100%;
+            padding: 15px;
+            margin-bottom: 10px;
+            background-color: #4da6ff;
+            color: #101010;
+            text-decoration: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: bold;
+            text-align: center;
+            border: none;
+            cursor: pointer;
+            box-sizing: border-box;
+        }
+        .sidebar .nav-button:hover {
+            background-color: #6bb3ff;
+        }
+        .main-content {
+            margin-left: 180px;
+            margin-right: 180px;
+            padding: 20px;
+        }
+        .right-sidebar {
+            position: fixed;
+            top: 0;
+            right: 0;
+            width: 160px;
+            height: 100vh;
+            background: #1a1a1a;
+            border: 1px solid #333;
+            border-radius: 0;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            overflow-y: auto;
+            z-index: 1000;
+        }
+        .right-sidebar h2 {
+            color: #4da6ff;
+            margin-top: 0;
+            margin-bottom: 20px;
+            font-size: 18px;
+            text-align: center;
+            border-bottom: 2px solid #4da6ff;
+            padding-bottom: 5px;
+        }
+        .right-sidebar .action-button {
+            display: block;
+            width: 100%;
+            padding: 15px;
+            margin-bottom: 10px;
+            background-color: #4da6ff;
+            color: #101010;
+            text-decoration: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: bold;
+            text-align: center;
+            border: none;
+            cursor: pointer;
+            box-sizing: border-box;
+        }
+        .right-sidebar .action-button:hover {
+            background-color: #6bb3ff;
+        }
+        .right-sidebar .save-button {
+            background-color: #4da6ff;
+        }
+        .right-sidebar .reset-button {
+            background-color: #ff6b6b;
+        }
+        .right-sidebar .reset-button:hover {
+            background-color: #ff5252;
         }
         h1 {
             text-align: center;
@@ -374,24 +495,22 @@ const char* HTML_SETTINGS = R"rawliteral(
     </style>
 </head>
 <body>
-    <h1>Ventilacijski sistem - Nastavitve</h1>
-    <div id="timeDisplay" style="text-align: center; margin: 10px 0; font-size: 16px; color: #4da6ff;"></div>
-    <div style="text-align: center; margin-bottom: 20px;">
-        <a href="/" class="nav-link">← Nazaj na začetno stran</a>
+    <div class="sidebar">
+        <h2>Navigacija</h2>
+        <a href="/" class="nav-button">Domača stran</a>
+        <a href="/settings" class="nav-button">Nastavitve</a>
+        <a href="/sensor-offsets" class="nav-button">Nastavitve senzorjev</a>
+        <a href="/help" class="nav-button">Pomoč</a>
+        <h3 style="color: #4da6ff; margin: 20px 0 10px 0; font-size: 14px;">Druge enote</h3>
+        <a href="http://192.168.2.190/" class="nav-button" style="font-size: 12px;">REW</a>
+        <a href="http://192.168.2.191/" class="nav-button" style="font-size: 12px;">SEW</a>
+        <a href="http://192.168.2.193/" class="nav-button" style="font-size: 12px;">UT_DEW</a>
+        <a href="http://192.168.2.194/" class="nav-button" style="font-size: 12px;">KOP_DEW</a>
     </div>
-    <div class="tab">
-        <button class="tablinks active" onclick="openTab(event, 'Settings')">Nastavitve</button>
-        <button class="tablinks" onclick="openTab(event, 'Help')">Pomoč</button>
-    </div>
-    <div id="Settings" class="tabcontent active">
+    <div class="main-content">
+        <h1>Ventilacijski sistem - Nastavitve</h1>
         <div class="form-container">
             <form id="settingsForm">
-                <div class="error" id="error-message"></div>
-                <div class="success" id="success-message"></div>
-                <div class="button-group">
-                    <input type="button" value="Shrani" class="submit-btn" onclick="saveSettings()">
-                    <input type="button" value="Razveljavi spremembe" class="submit-btn reset-btn" onclick="updateSettings()">
-                </div>
                 <div class="form-group">
                     <label for="humThreshold">Meja vlage Kopalnica/Utility</label>
                     <input type="number" name="humThreshold" id="humThreshold" step="1" min="0" max="100">
@@ -534,6 +653,11 @@ const char* HTML_SETTINGS = R"rawliteral(
                 </div>
             </form>
         </div>
+    </div>
+    <div class="right-sidebar">
+        <h2>Akcije</h2>
+        <button type="button" class="action-button save-button" onclick="saveSettings()">Shrani</button>
+        <button type="button" class="action-button reset-button" onclick="resetSettings()">Razveljavi spremembe</button>
     </div>
     <div id="Help" class="tabcontent">
         <div class="form-container">
@@ -807,10 +931,110 @@ const char* HTML_SETTINGS_SENSOR_OFFSETS = R"rawliteral(
     <title>CEE - Nastavitve senzorjev</title>
     <style>
         body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            font-size: 16px;
             background: #101010;
             color: #e0e0e0;
-            font-family: sans-serif;
-            margin: 20px;
+            display: flex;
+        }
+        .sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 160px;
+            height: 100vh;
+            background: #1a1a1a;
+            border: 1px solid #333;
+            border-radius: 0;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            overflow-y: auto;
+            z-index: 1000;
+        }
+        .sidebar h2 {
+            color: #4da6ff;
+            margin-top: 0;
+            margin-bottom: 20px;
+            font-size: 18px;
+            text-align: center;
+            border-bottom: 2px solid #4da6ff;
+            padding-bottom: 5px;
+        }
+        .sidebar .nav-button {
+            display: block;
+            width: 100%;
+            padding: 15px;
+            margin-bottom: 10px;
+            background-color: #4da6ff;
+            color: #101010;
+            text-decoration: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: bold;
+            text-align: center;
+            border: none;
+            cursor: pointer;
+            box-sizing: border-box;
+        }
+        .sidebar .nav-button:hover {
+            background-color: #6bb3ff;
+        }
+        .main-content {
+            margin-left: 180px;
+            margin-right: 180px;
+            padding: 20px;
+        }
+        .right-sidebar {
+            position: fixed;
+            top: 0;
+            right: 0;
+            width: 160px;
+            height: 100vh;
+            background: #1a1a1a;
+            border: 1px solid #333;
+            border-radius: 0;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            overflow-y: auto;
+            z-index: 1000;
+        }
+        .right-sidebar h2 {
+            color: #4da6ff;
+            margin-top: 0;
+            margin-bottom: 20px;
+            font-size: 18px;
+            text-align: center;
+            border-bottom: 2px solid #4da6ff;
+            padding-bottom: 5px;
+        }
+        .right-sidebar .action-button {
+            display: block;
+            width: 100%;
+            padding: 15px;
+            margin-bottom: 10px;
+            background-color: #4da6ff;
+            color: #101010;
+            text-decoration: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: bold;
+            text-align: center;
+            border: none;
+            cursor: pointer;
+            box-sizing: border-box;
+        }
+        .right-sidebar .action-button:hover {
+            background-color: #6bb3ff;
+        }
+        .right-sidebar .save-button {
+            background-color: #4da6ff;
+        }
+        .right-sidebar .reset-button {
+            background-color: #ffaa00;
+        }
+        .right-sidebar .reset-button:hover {
+            background-color: #e69500;
         }
         h1 {
             color: white;
@@ -942,7 +1166,20 @@ const char* HTML_SETTINGS_SENSOR_OFFSETS = R"rawliteral(
     </style>
 </head>
 <body>
-    <h1>Nastavitve senzorjev</h1>
+    <div class="sidebar">
+        <h2>Navigacija</h2>
+        <a href="/" class="nav-button">Domača stran</a>
+        <a href="/settings" class="nav-button">Nastavitve</a>
+        <a href="/sensor-offsets" class="nav-button">Nastavitve senzorjev</a>
+        <a href="/help" class="nav-button">Pomoč</a>
+        <h3 style="color: #4da6ff; margin: 20px 0 10px 0; font-size: 14px;">Druge enote</h3>
+        <a href="http://192.168.2.190/" class="nav-button" style="font-size: 12px;">REW</a>
+        <a href="http://192.168.2.191/" class="nav-button" style="font-size: 12px;">SEW</a>
+        <a href="http://192.168.2.193/" class="nav-button" style="font-size: 12px;">UT_DEW</a>
+        <a href="http://192.168.2.194/" class="nav-button" style="font-size: 12px;">KOP_DEW</a>
+    </div>
+    <div class="main-content">
+        <h1>Nastavitve senzorjev</h1>
 
     <div id="message" class="message" style="display: none;"></div>
 
@@ -1007,8 +1244,10 @@ const char* HTML_SETTINGS_SENSOR_OFFSETS = R"rawliteral(
         </div>
     </form>
 
-    <div class="back">
-        <a href="/">Nazaj na začetno stran</a>
+    <div class="right-sidebar">
+        <h2>Akcije</h2>
+        <button type="button" class="action-button save-button" onclick="document.getElementById('settingsForm').dispatchEvent(new Event('submit'))">Shrani nastavitve</button>
+        <button type="button" class="action-button reset-button" onclick="resetToDefaults()">Ponastavi na privzete</button>
     </div>
 
     <script>
@@ -1130,6 +1369,53 @@ void handleRoot(AsyncWebServerRequest *request) {
             margin: 20px;
             background: #101010;
             color: #e0e0e0;
+            display: flex;
+        }
+        .sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 160px;
+            height: 100vh;
+            background: #1a1a1a;
+            border: 1px solid #333;
+            border-radius: 0;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            overflow-y: auto;
+            z-index: 1000;
+        }
+        .sidebar h2 {
+            color: #4da6ff;
+            margin-top: 0;
+            margin-bottom: 20px;
+            font-size: 18px;
+            text-align: center;
+            border-bottom: 2px solid #4da6ff;
+            padding-bottom: 5px;
+        }
+        .sidebar .nav-button {
+            display: block;
+            width: 100%;
+            padding: 15px;
+            margin-bottom: 10px;
+            background-color: #4da6ff;
+            color: #101010;
+            text-decoration: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: bold;
+            text-align: center;
+            border: none;
+            cursor: pointer;
+            box-sizing: border-box;
+        }
+        .sidebar .nav-button:hover {
+            background-color: #6bb3ff;
+        }
+        .main-content {
+            margin-left: 180px;
+            padding: 20px;
         }
         h1 {
             text-align: center;
@@ -1139,9 +1425,9 @@ void handleRoot(AsyncWebServerRequest *request) {
         }
         .grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
             gap: 20px;
-            max-width: 1200px;
+            max-width: 1400px;
             margin: 0 auto;
         }
         .card {
@@ -1176,26 +1462,6 @@ void handleRoot(AsyncWebServerRequest *request) {
         .status-value {
             color: #e0e0e0;
         }
-        .nav-container {
-            text-align: center;
-            margin-top: 30px;
-        }
-        .nav-button {
-            display: inline-block;
-            padding: 12px 24px;
-            margin: 10px;
-            background-color: #4da6ff;
-            color: #101010;
-            text-decoration: none;
-            border-radius: 6px;
-            font-size: 16px;
-            font-weight: bold;
-            border: none;
-            cursor: pointer;
-        }
-        .nav-button:hover {
-            background-color: #6bb3ff;
-        }
         .time-display {
             text-align: center;
             margin-bottom: 20px;
@@ -1205,10 +1471,24 @@ void handleRoot(AsyncWebServerRequest *request) {
     </style>
 </head>
 <body>
-    <h1>CEE - Ventilacijski sistem</h1>
-    <div id="timeDisplay" class="time-display">Trenutni čas: )rawliteral" + myTZ.dateTime() + R"rawliteral( | DND: )rawliteral" + (isDNDTime() ? "DA" : "NE") + R"rawliteral( | NND: )rawliteral" + (isNNDTime() ? "DA" : "NE") + R"rawliteral(</div>
+    <div class="sidebar">
+        <h2>Navigacija</h2>
+        <a href="/settings" class="nav-button">Nastavitve</a>
+        <a href="/sensor-offsets" class="nav-button">Nastavitve senzorjev</a>
+        <a href="/help" class="nav-button">Pomoč</a>
+        <h3 style="color: #4da6ff; margin: 20px 0 10px 0; font-size: 14px;">Druge enote</h3>
+        <a href="http://192.168.2.190/" class="nav-button" style="font-size: 12px;">REW</a>
+        <a href="http://192.168.2.191/" class="nav-button" style="font-size: 12px;">SEW</a>
+        <a href="http://192.168.2.193/" class="nav-button" style="font-size: 12px;">UT_DEW</a>
+        <a href="http://192.168.2.194/" class="nav-button" style="font-size: 12px;">KOP_DEW</a>
+    </div>
+    <div class="main-content">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h1 style="margin: 0;">Ventilacijski sistem</h1>
+            <div id="dateDisplay" style="text-align: right; color: #4da6ff; font-size: 16px; font-weight: bold;">)rawliteral" + getSlovenianDateTime() + R"rawliteral(</div>
+        </div>
 
-    <div class="grid">
+        <div class="grid">
         <!-- WC Card -->
         <div class="card">
             <h2>WC</h2>
@@ -1356,6 +1636,14 @@ void handleRoot(AsyncWebServerRequest *request) {
                 <span class="status-label">Ikona:</span>
                 <span class="status-value" id="ext-weather-icon">)rawliteral" + String(currentWeatherIcon) + R"rawliteral(</span>
             </div>
+            <div class="status-item">
+                <span class="status-label">DND:</span>
+                <span class="status-value" id="ext-dnd">)rawliteral" + (isDNDTime() ? "DA" : "NE") + R"rawliteral(</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">NND:</span>
+                <span class="status-value" id="ext-nnd">)rawliteral" + (isNNDTime() ? "DA" : "NE") + R"rawliteral(</span>
+            </div>
         </div>
 
         <!-- Power Card -->
@@ -1438,12 +1726,6 @@ void handleRoot(AsyncWebServerRequest *request) {
                 </div>
             </div>
         </div>
-    </div>
-
-    <div class="nav-container">
-        <a href="/settings" class="nav-button">Nastavitve</a>
-        <a href="/sensor-offsets" class="nav-button">Nastavitve senzorjev</a>
-        <a href="/help" class="nav-button">Pomoč</a>
     </div>
 
     <script>
@@ -1553,6 +1835,53 @@ void handleHelp(AsyncWebServerRequest *request) {
             font-size: 16px;
             background: #101010;
             color: #e0e0e0;
+            display: flex;
+        }
+        .sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 160px;
+            height: 100vh;
+            background: #1a1a1a;
+            border: 1px solid #333;
+            border-radius: 0;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            overflow-y: auto;
+            z-index: 1000;
+        }
+        .sidebar h2 {
+            color: #4da6ff;
+            margin-top: 0;
+            margin-bottom: 20px;
+            font-size: 18px;
+            text-align: center;
+            border-bottom: 2px solid #4da6ff;
+            padding-bottom: 5px;
+        }
+        .sidebar .nav-button {
+            display: block;
+            width: 100%;
+            padding: 15px;
+            margin-bottom: 10px;
+            background-color: #4da6ff;
+            color: #101010;
+            text-decoration: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: bold;
+            text-align: center;
+            border: none;
+            cursor: pointer;
+            box-sizing: border-box;
+        }
+        .sidebar .nav-button:hover {
+            background-color: #6bb3ff;
+        }
+        .main-content {
+            margin-left: 180px;
+            padding: 20px;
         }
         h1 {
             text-align: center;
@@ -1600,10 +1929,23 @@ void handleHelp(AsyncWebServerRequest *request) {
     </style>
 </head>
 <body>
-    <h1>Pomoč - CEE Ventilacijski sistem</h1>
+    <div class="sidebar">
+        <h2>Navigacija</h2>
+        <a href="/" class="nav-button">Domača stran</a>
+        <a href="/settings" class="nav-button">Nastavitve</a>
+        <a href="/sensor-offsets" class="nav-button">Nastavitve senzorjev</a>
+        <a href="/help" class="nav-button">Pomoč</a>
+        <h3 style="color: #4da6ff; margin: 20px 0 10px 0; font-size: 14px;">Druge enote</h3>
+        <a href="http://192.168.2.190/" class="nav-button" style="font-size: 12px;">REW</a>
+        <a href="http://192.168.2.191/" class="nav-button" style="font-size: 12px;">SEW</a>
+        <a href="http://192.168.2.193/" class="nav-button" style="font-size: 12px;">UT_DEW</a>
+        <a href="http://192.168.2.194/" class="nav-button" style="font-size: 12px;">KOP_DEW</a>
+    </div>
+    <div class="main-content">
+        <h1>Pomoč - CEE Ventilacijski sistem</h1>
 
-    <div class="help-container">
-        <a href="/" class="nav-link">← Nazaj na začetno stran</a>
+        <div class="help-container">
+            <a href="/" class="nav-link">← Nazaj na začetno stran</a>
 
         <h2>Sistemski status</h2>
         <p>Na začetni strani vidite trenutne vrednosti senzorjev iz različnih prostorov sistema:</p>
@@ -1632,6 +1974,7 @@ void handleHelp(AsyncWebServerRequest *request) {
 
         <h2>Tehnična podpora</h2>
         <p>Za dodatno pomoč ali težave s sistemom preverite log datoteke ali se obrnite na administratorja sistema.</p>
+        </div>
     </div>
 </body>
 </html>)rawliteral";
