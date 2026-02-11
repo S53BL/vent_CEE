@@ -151,47 +151,11 @@ void loadSettings() {
   uint16_t stored_crc = prefs.getUShort("settings_crc", 0);
   prefs.end();
 
-  // Izračunaj CRC prebranih nastavitev (na podlagi posameznih polj, ne struct memory)
-  // POZOR: Če se doda nova polja v Settings strukturo, jih je potrebno dodati tudi tukaj
-  // in v saveSettings() funkciji v ISTEM VRSTNEM REDU!
+  // Izračunaj CRC prebranih nastavitev (na podlagi struct memory)
   uint8_t crcData[sizeof(Settings)];
-  memset(crcData, 0, sizeof(crcData));
-  size_t offset = 0;
-  memcpy(crcData + offset, &settings.humThreshold, sizeof(settings.humThreshold)); offset += sizeof(settings.humThreshold);
-  memcpy(crcData + offset, &settings.fanDuration, sizeof(settings.fanDuration)); offset += sizeof(settings.fanDuration);
-  memcpy(crcData + offset, &settings.fanOffDuration, sizeof(settings.fanOffDuration)); offset += sizeof(settings.fanOffDuration);
-  memcpy(crcData + offset, &settings.fanOffDurationKop, sizeof(settings.fanOffDurationKop)); offset += sizeof(settings.fanOffDurationKop);
-  memcpy(crcData + offset, &settings.tempLowThreshold, sizeof(settings.tempLowThreshold)); offset += sizeof(settings.tempLowThreshold);
-  memcpy(crcData + offset, &settings.tempMinThreshold, sizeof(settings.tempMinThreshold)); offset += sizeof(settings.tempMinThreshold);
-  memcpy(crcData + offset, &settings.dndAllowableAutomatic, sizeof(settings.dndAllowableAutomatic)); offset += sizeof(settings.dndAllowableAutomatic);
-  memcpy(crcData + offset, &settings.dndAllowableSemiautomatic, sizeof(settings.dndAllowableSemiautomatic)); offset += sizeof(settings.dndAllowableSemiautomatic);
-  memcpy(crcData + offset, &settings.dndAllowableManual, sizeof(settings.dndAllowableManual)); offset += sizeof(settings.dndAllowableManual);
-  memcpy(crcData + offset, &settings.cycleDurationDS, sizeof(settings.cycleDurationDS)); offset += sizeof(settings.cycleDurationDS);
-  memcpy(crcData + offset, &settings.cycleActivePercentDS, sizeof(settings.cycleActivePercentDS)); offset += sizeof(settings.cycleActivePercentDS);
-  memcpy(crcData + offset, &settings.humThresholdDS, sizeof(settings.humThresholdDS)); offset += sizeof(settings.humThresholdDS);
-  memcpy(crcData + offset, &settings.humThresholdHighDS, sizeof(settings.humThresholdHighDS)); offset += sizeof(settings.humThresholdHighDS);
-  memcpy(crcData + offset, &settings.co2ThresholdLowDS, sizeof(settings.co2ThresholdLowDS)); offset += sizeof(settings.co2ThresholdLowDS);
-  memcpy(crcData + offset, &settings.co2ThresholdHighDS, sizeof(settings.co2ThresholdHighDS)); offset += sizeof(settings.co2ThresholdHighDS);
-  memcpy(crcData + offset, &settings.incrementPercentLowDS, sizeof(settings.incrementPercentLowDS)); offset += sizeof(settings.incrementPercentLowDS);
-  memcpy(crcData + offset, &settings.incrementPercentHighDS, sizeof(settings.incrementPercentHighDS)); offset += sizeof(settings.incrementPercentHighDS);
-  memcpy(crcData + offset, &settings.incrementPercentTempDS, sizeof(settings.incrementPercentTempDS)); offset += sizeof(settings.incrementPercentTempDS);
-  memcpy(crcData + offset, &settings.tempIdealDS, sizeof(settings.tempIdealDS)); offset += sizeof(settings.tempIdealDS);
-  memcpy(crcData + offset, &settings.tempExtremeHighDS, sizeof(settings.tempExtremeHighDS)); offset += sizeof(settings.tempExtremeHighDS);
-  memcpy(crcData + offset, &settings.tempExtremeLowDS, sizeof(settings.tempExtremeLowDS)); offset += sizeof(settings.tempExtremeLowDS);
-  memcpy(crcData + offset, &settings.humExtremeHighDS, sizeof(settings.humExtremeHighDS)); offset += sizeof(settings.humExtremeHighDS);
-
-  // Add sensor offsets to CRC
-  memcpy(crcData + offset, &settings.bmeTempOffset, sizeof(settings.bmeTempOffset)); offset += sizeof(settings.bmeTempOffset);
-  memcpy(crcData + offset, &settings.bmeHumidityOffset, sizeof(settings.bmeHumidityOffset)); offset += sizeof(settings.bmeHumidityOffset);
-  memcpy(crcData + offset, &settings.bmePressureOffset, sizeof(settings.bmePressureOffset)); offset += sizeof(settings.bmePressureOffset);
-  memcpy(crcData + offset, &settings.shtTempOffset, sizeof(settings.shtTempOffset)); offset += sizeof(settings.shtTempOffset);
-  memcpy(crcData + offset, &settings.shtHumidityOffset, sizeof(settings.shtHumidityOffset)); offset += sizeof(settings.shtHumidityOffset);
-  memcpy(crcData + offset, &settings.reservedSensor1, sizeof(settings.reservedSensor1)); offset += sizeof(settings.reservedSensor1);
-  memcpy(crcData + offset, &settings.reservedSensor2, sizeof(settings.reservedSensor2)); offset += sizeof(settings.reservedSensor2);
-
-  memcpy(crcData + offset, &settings.lastKnownUnixTime, sizeof(settings.lastKnownUnixTime)); offset += sizeof(settings.lastKnownUnixTime);
-
-  uint16_t calculated_crc = calculateCRC(crcData, offset);
+  memset(crcData, 0, sizeof(Settings));
+  memcpy(crcData, &settings, sizeof(Settings));
+  uint16_t calculated_crc = calculateCRC(crcData, sizeof(Settings));
 
   LOG_INFO("Settings", "Prebran shranjen CRC: 0x%04X", stored_crc);
   LOG_INFO("Settings", "Izračunan CRC: 0x%04X", calculated_crc);
@@ -245,47 +209,11 @@ void saveSettings() {
 
   prefs.putULong("lastKnownUnixTime", settings.lastKnownUnixTime);
 
-  // Izračunaj in shrani CRC za validacijo (na podlagi posameznih polj, ne struct memory)
-  // POZOR: Če se doda nova polja v Settings strukturo, jih je potrebno dodati tudi tukaj
-  // in v loadSettings() funkciji v ISTEM VRSTNEM REDU!
+  // Izračunaj in shrani CRC za validacijo (na podlagi struct memory)
   uint8_t crcData[sizeof(Settings)];
-  memset(crcData, 0, sizeof(crcData));
-  size_t offset = 0;
-  memcpy(crcData + offset, &settings.humThreshold, sizeof(settings.humThreshold)); offset += sizeof(settings.humThreshold);
-  memcpy(crcData + offset, &settings.fanDuration, sizeof(settings.fanDuration)); offset += sizeof(settings.fanDuration);
-  memcpy(crcData + offset, &settings.fanOffDuration, sizeof(settings.fanOffDuration)); offset += sizeof(settings.fanOffDuration);
-  memcpy(crcData + offset, &settings.fanOffDurationKop, sizeof(settings.fanOffDurationKop)); offset += sizeof(settings.fanOffDurationKop);
-  memcpy(crcData + offset, &settings.tempLowThreshold, sizeof(settings.tempLowThreshold)); offset += sizeof(settings.tempLowThreshold);
-  memcpy(crcData + offset, &settings.tempMinThreshold, sizeof(settings.tempMinThreshold)); offset += sizeof(settings.tempMinThreshold);
-  memcpy(crcData + offset, &settings.dndAllowableAutomatic, sizeof(settings.dndAllowableAutomatic)); offset += sizeof(settings.dndAllowableAutomatic);
-  memcpy(crcData + offset, &settings.dndAllowableSemiautomatic, sizeof(settings.dndAllowableSemiautomatic)); offset += sizeof(settings.dndAllowableSemiautomatic);
-  memcpy(crcData + offset, &settings.dndAllowableManual, sizeof(settings.dndAllowableManual)); offset += sizeof(settings.dndAllowableManual);
-  memcpy(crcData + offset, &settings.cycleDurationDS, sizeof(settings.cycleDurationDS)); offset += sizeof(settings.cycleDurationDS);
-  memcpy(crcData + offset, &settings.cycleActivePercentDS, sizeof(settings.cycleActivePercentDS)); offset += sizeof(settings.cycleActivePercentDS);
-  memcpy(crcData + offset, &settings.humThresholdDS, sizeof(settings.humThresholdDS)); offset += sizeof(settings.humThresholdDS);
-  memcpy(crcData + offset, &settings.humThresholdHighDS, sizeof(settings.humThresholdHighDS)); offset += sizeof(settings.humThresholdHighDS);
-  memcpy(crcData + offset, &settings.co2ThresholdLowDS, sizeof(settings.co2ThresholdLowDS)); offset += sizeof(settings.co2ThresholdLowDS);
-  memcpy(crcData + offset, &settings.co2ThresholdHighDS, sizeof(settings.co2ThresholdHighDS)); offset += sizeof(settings.co2ThresholdHighDS);
-  memcpy(crcData + offset, &settings.incrementPercentLowDS, sizeof(settings.incrementPercentLowDS)); offset += sizeof(settings.incrementPercentLowDS);
-  memcpy(crcData + offset, &settings.incrementPercentHighDS, sizeof(settings.incrementPercentHighDS)); offset += sizeof(settings.incrementPercentHighDS);
-  memcpy(crcData + offset, &settings.incrementPercentTempDS, sizeof(settings.incrementPercentTempDS)); offset += sizeof(settings.incrementPercentTempDS);
-  memcpy(crcData + offset, &settings.tempIdealDS, sizeof(settings.tempIdealDS)); offset += sizeof(settings.tempIdealDS);
-  memcpy(crcData + offset, &settings.tempExtremeHighDS, sizeof(settings.tempExtremeHighDS)); offset += sizeof(settings.tempExtremeHighDS);
-  memcpy(crcData + offset, &settings.tempExtremeLowDS, sizeof(settings.tempExtremeLowDS)); offset += sizeof(settings.tempExtremeLowDS);
-  memcpy(crcData + offset, &settings.humExtremeHighDS, sizeof(settings.humExtremeHighDS)); offset += sizeof(settings.humExtremeHighDS);
-
-  // Add sensor offsets to CRC
-  memcpy(crcData + offset, &settings.bmeTempOffset, sizeof(settings.bmeTempOffset)); offset += sizeof(settings.bmeTempOffset);
-  memcpy(crcData + offset, &settings.bmeHumidityOffset, sizeof(settings.bmeHumidityOffset)); offset += sizeof(settings.bmeHumidityOffset);
-  memcpy(crcData + offset, &settings.bmePressureOffset, sizeof(settings.bmePressureOffset)); offset += sizeof(settings.bmePressureOffset);
-  memcpy(crcData + offset, &settings.shtTempOffset, sizeof(settings.shtTempOffset)); offset += sizeof(settings.shtTempOffset);
-  memcpy(crcData + offset, &settings.shtHumidityOffset, sizeof(settings.shtHumidityOffset)); offset += sizeof(settings.shtHumidityOffset);
-  memcpy(crcData + offset, &settings.reservedSensor1, sizeof(settings.reservedSensor1)); offset += sizeof(settings.reservedSensor1);
-  memcpy(crcData + offset, &settings.reservedSensor2, sizeof(settings.reservedSensor2)); offset += sizeof(settings.reservedSensor2);
-
-  memcpy(crcData + offset, &settings.lastKnownUnixTime, sizeof(settings.lastKnownUnixTime)); offset += sizeof(settings.lastKnownUnixTime);
-
-  uint16_t crc = calculateCRC(crcData, offset);
+  memset(crcData, 0, sizeof(Settings));
+  memcpy(crcData, &settings, sizeof(Settings));
+  uint16_t crc = calculateCRC(crcData, sizeof(Settings));
   prefs.putUShort("settings_crc", crc);
 
   prefs.end();

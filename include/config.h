@@ -137,7 +137,7 @@ struct Settings {
     float reservedSensor2 = 0.0f;
 
     uint32_t lastKnownUnixTime = 0;
-};
+} __attribute__((packed));
 struct ExternalData {
     float externalTemperature;
     float externalHumidity;
