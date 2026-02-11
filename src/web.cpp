@@ -6,6 +6,51 @@
 #include "system.h"
 #include "message_fields.h"
 
+// Helper functions for root page
+String formatUptime(unsigned long seconds) {
+    unsigned long days = seconds / 86400;
+    unsigned long hours = (seconds % 86400) / 3600;
+    unsigned long minutes = (seconds % 3600) / 60;
+    unsigned long secs = seconds % 60;
+    char buffer[20];
+    snprintf(buffer, sizeof(buffer), "%02lu %02lu:%02lu:%02lu", days, hours, minutes, secs);
+    return String(buffer);
+}
+
+int getRemainingTime(int index) {
+    if (currentData.offTimes[index] > 0) {
+        time_t now = myTZ.now();
+        if (currentData.offTimes[index] > now) {
+            return currentData.offTimes[index] - now;
+        }
+    }
+    return 0;
+}
+
+String getFanStatus(bool fanActive, bool disabled) {
+    if (disabled) return "DISABLED";
+    return fanActive ? "ON" : "OFF";
+}
+
+String getLightStatus(bool light) {
+    return light ? "ON" : "OFF";
+}
+
+String getWindowStatus() {
+    return (currentData.windowSensor1 && currentData.windowSensor2) ? "Odprta" : "Zaprta";
+}
+
+String getErrorDescription(uint8_t errorFlags) {
+    String errors = "";
+    if (errorFlags & ERR_BME280) errors += "Senzor BME280 nedelujoč<br>";
+    if (errorFlags & ERR_SHT41) errors += "Senzor SHT41 nedelujoč<br>";
+    if (errorFlags & ERR_LITTLEFS) errors += "LittleFS napaka<br>";
+    if (errorFlags & ERR_HTTP) errors += "HTTP napaka<br>";
+    if (errorFlags & ERR_POWER) errors += "Napajalna napaka<br>";
+    if (errors == "") errors = "Brez napak";
+    return errors;
+}
+
 AsyncWebServer server(80);
 
 // HTTP endpoint handlers
@@ -756,26 +801,15 @@ unsigned long settingsUpdateStartTime = 0;
 bool settingsUpdateSuccess = false;
 String settingsUpdateMessage = "";
 
-// Handle root page with navigation
+// Handle root page with cards layout
 void handleRoot(AsyncWebServerRequest *request) {
   LOG_DEBUG("Web", "Zahtevek: GET /");
 
-  // Create status content
-  String statusContent = "<table>\n";
-  statusContent += "<tr><th>Senzor</th><th>Vrednosti</th></tr>\n";
-  statusContent += "<tr><td>EXT</td><td>Temp=" + String(currentData.externalTemp, 1) + "°C, Hum=" + String(currentData.externalHumidity, 1) + "%</td></tr>\n";
-  statusContent += "<tr><td>DS</td><td>Temp=" + String(currentData.livingTemp, 1) + "°C, Hum=" + String(currentData.livingHumidity, 1) + "%, CO2=" + String((int)currentData.livingCO2) + " ppm</td></tr>\n";
-  statusContent += "<tr><td>UT</td><td>Temp=" + String(currentData.utilityTemp, 1) + "°C, Hum=" + String(currentData.utilityHumidity, 1) + "%</td></tr>\n";
-  statusContent += "<tr><td>KOP</td><td>Temp=" + String(currentData.bathroomTemp, 1) + "°C, Hum=" + String(currentData.bathroomHumidity, 1) + "%</td></tr>\n";
-  statusContent += "<tr><td>WC</td><td>Pres=" + String((int)currentData.bathroomPressure) + " hPa</td></tr>\n";
-  statusContent += "<tr><td>5 V supply</td><td>" + String(currentData.supply5V, 3) + " V</td></tr>\n";
-  statusContent += "<tr><td>3.3 V supply</td><td>" + String(currentData.supply3V3, 3) + " V</td></tr>\n";
-  statusContent += "<tr><td>Power error</td><td>" + String((currentData.errorFlags & ERR_POWER) ? "Yes" : "No") + "</td></tr>\n";
-  statusContent += "<tr><td>TIME_WIFI</td><td>Power=" + String(currentData.currentPower, 1) + " W, Energy=" + String(currentData.energyConsumption, 1) + " Wh</td></tr>\n";
-  statusContent += "<tr><td>Zadnja posodobitev</td><td>" + myTZ.dateTime("H:i:s d.m.y") + "</td></tr>\n";
-  statusContent += "</table>\n";
+  // Calculate system data
+  float ramPercent = (ESP.getHeapSize() - ESP.getFreeHeap()) * 100.0 / ESP.getHeapSize();
+  String uptimeStr = formatUptime(millis() / 1000);
 
-  // Basic HTML with navigation
+  // Build HTML with cards
   String html = R"rawliteral(
 <!DOCTYPE HTML>
 <html>
@@ -786,34 +820,57 @@ void handleRoot(AsyncWebServerRequest *request) {
         body {
             font-family: Arial, sans-serif;
             margin: 20px;
-            font-size: 16px;
             background: #101010;
             color: #e0e0e0;
         }
         h1 {
             text-align: center;
-            font-size: 24px;
+            font-size: 28px;
             color: #e0e0e0;
             margin-bottom: 30px;
         }
-        .status-container {
-            max-width: 600px;
-            margin: 0 auto 30px auto;
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .card {
             background: #1a1a1a;
             border: 1px solid #333;
             border-radius: 8px;
             padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
         }
-        .status-content {
-            font-family: monospace;
-            font-size: 14px;
-            line-height: 1.4;
-            white-space: pre-line;
+        .card h2 {
+            color: #4da6ff;
+            margin-top: 0;
+            margin-bottom: 15px;
+            font-size: 20px;
+            border-bottom: 2px solid #4da6ff;
+            padding-bottom: 5px;
+        }
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            padding: 5px 0;
+            border-bottom: 1px solid #333;
+        }
+        .status-item:last-child {
+            border-bottom: none;
+        }
+        .status-label {
+            font-weight: bold;
+            color: #ccc;
+        }
+        .status-value {
+            color: #e0e0e0;
         }
         .nav-container {
-            max-width: 600px;
-            margin: 0 auto;
             text-align: center;
+            margin-top: 30px;
         }
         .nav-button {
             display: inline-block;
@@ -831,20 +888,337 @@ void handleRoot(AsyncWebServerRequest *request) {
         .nav-button:hover {
             background-color: #6bb3ff;
         }
+        .time-display {
+            text-align: center;
+            margin-bottom: 20px;
+            font-size: 16px;
+            color: #4da6ff;
+        }
     </style>
 </head>
 <body>
     <h1>CEE - Ventilacijski sistem</h1>
+    <div id="timeDisplay" class="time-display">Trenutni čas: )rawliteral" + myTZ.dateTime() + R"rawliteral( | DND: )rawliteral" + (isDNDTime() ? "DA" : "NE") + R"rawliteral( | NND: )rawliteral" + (isNNDTime() ? "DA" : "NE") + R"rawliteral(</div>
 
-    <div class="status-container">
-        <h2>Sistemski status</h2>
-        <div class="status-content">)rawliteral" + statusContent + R"rawliteral(</div>
+    <div class="nav-container">
+        <a href="/settings" class="nav-button">Nastavitve</a>
+        <a href="/help" class="nav-button">Pomoč</a>
+    </div>
+
+    <div class="grid">
+        <!-- WC Card -->
+        <div class="card">
+            <h2>WC</h2>
+            <div class="status-item">
+                <span class="status-label">Temperatura:</span>
+                <span class="status-value" id="wc-temp">N/A</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Vlaga:</span>
+                <span class="status-value" id="wc-humidity">N/A</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Tlak:</span>
+                <span class="status-value" id="wc-pressure">)rawliteral" + String((int)currentData.bathroomPressure) + R"rawliteral( hPa</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Luč:</span>
+                <span class="status-value" id="wc-light">)rawliteral" + getLightStatus(currentData.wcLight) + R"rawliteral(</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Ventilator:</span>
+                <span class="status-value" id="wc-fan">)rawliteral" + getFanStatus(currentData.wcFan, currentData.disableWc) + R"rawliteral(</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Preostali čas:</span>
+                <span class="status-value" id="wc-remaining">)rawliteral" + String(getRemainingTime(2)) + R"rawliteral( s</span>
+            </div>
+        </div>
+
+        <!-- KOP Card -->
+        <div class="card">
+            <h2>Kopalnica</h2>
+            <div class="status-item">
+                <span class="status-label">Temperatura:</span>
+                <span class="status-value" id="kop-temp">)rawliteral" + String(currentData.bathroomTemp, 1) + R"rawliteral( °C</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Vlaga:</span>
+                <span class="status-value" id="kop-humidity">)rawliteral" + String(currentData.bathroomHumidity, 1) + R"rawliteral( %</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Luč 1:</span>
+                <span class="status-value" id="kop-light1">)rawliteral" + getLightStatus(currentData.bathroomLight1) + R"rawliteral(</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Luč 2:</span>
+                <span class="status-value" id="kop-light2">)rawliteral" + getLightStatus(currentData.bathroomLight2) + R"rawliteral(</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Ventilator:</span>
+                <span class="status-value" id="kop-fan">)rawliteral" + getFanStatus(currentData.bathroomFan, currentData.disableBathroom) + R"rawliteral(</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Preostali čas:</span>
+                <span class="status-value" id="kop-remaining">)rawliteral" + String(getRemainingTime(0)) + R"rawliteral( s</span>
+            </div>
+        </div>
+
+        <!-- UT Card -->
+        <div class="card">
+            <h2>Utility</h2>
+            <div class="status-item">
+                <span class="status-label">Temperatura:</span>
+                <span class="status-value" id="ut-temp">)rawliteral" + String(currentData.utilityTemp, 1) + R"rawliteral( °C</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Vlaga:</span>
+                <span class="status-value" id="ut-humidity">)rawliteral" + String(currentData.utilityHumidity, 1) + R"rawliteral( %</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Luč:</span>
+                <span class="status-value" id="ut-light">)rawliteral" + getLightStatus(currentData.utilityLight) + R"rawliteral(</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Stikalo:</span>
+                <span class="status-value" id="ut-switch">)rawliteral" + (currentData.utilitySwitch ? "ON" : "OFF") + R"rawliteral(</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Ventilator:</span>
+                <span class="status-value" id="ut-fan">)rawliteral" + getFanStatus(currentData.utilityFan, currentData.disableUtility) + R"rawliteral(</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Preostali čas:</span>
+                <span class="status-value" id="ut-remaining">)rawliteral" + String(getRemainingTime(1)) + R"rawliteral( s</span>
+            </div>
+        </div>
+
+        <!-- DS Card -->
+        <div class="card">
+            <h2>Dnevni prostor</h2>
+            <div class="status-item">
+                <span class="status-label">Temperatura:</span>
+                <span class="status-value" id="ds-temp">)rawliteral" + String(currentData.livingTemp, 1) + R"rawliteral( °C</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Vlaga:</span>
+                <span class="status-value" id="ds-humidity">)rawliteral" + String(currentData.livingHumidity, 1) + R"rawliteral( %</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">CO2:</span>
+                <span class="status-value" id="ds-co2">)rawliteral" + String((int)currentData.livingCO2) + R"rawliteral( ppm</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Strešno okno:</span>
+                <span class="status-value" id="ds-window1">)rawliteral" + (currentData.windowSensor1 ? "Odprto" : "Zaprto") + R"rawliteral(</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Balkonska vrata:</span>
+                <span class="status-value" id="ds-window2">)rawliteral" + (currentData.windowSensor2 ? "Odprto" : "Zaprto") + R"rawliteral(</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Stopnja ventilatorja:</span>
+                <span class="status-value" id="ds-fan-level">)rawliteral" + String(currentData.livingExhaustLevel) + R"rawliteral(</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Razmerje:</span>
+                <span class="status-value" id="ds-duty-cycle">)rawliteral" + String(currentData.livingRoomDutyCycle, 1) + R"rawliteral( %</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Preostali čas:</span>
+                <span class="status-value" id="ds-remaining">)rawliteral" + String(getRemainingTime(4)) + R"rawliteral( s</span>
+            </div>
+        </div>
+
+        <!-- External Data Card -->
+        <div class="card">
+            <h2>Zunanji podatki</h2>
+            <div class="status-item">
+                <span class="status-label">Temperatura:</span>
+                <span class="status-value" id="ext-temp">)rawliteral" + String(currentData.externalTemp, 1) + R"rawliteral( °C</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Vlaga:</span>
+                <span class="status-value" id="ext-humidity">)rawliteral" + String(currentData.externalHumidity, 1) + R"rawliteral( %</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Tlak:</span>
+                <span class="status-value" id="ext-pressure">)rawliteral" + String(currentData.externalPressure, 1) + R"rawliteral( hPa</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Svetloba:</span>
+                <span class="status-value" id="ext-light">)rawliteral" + String(currentData.externalLight, 1) + R"rawliteral( lux</span>
+            </div>
+        </div>
+
+        <!-- Power Card -->
+        <div class="card">
+            <h2>Napajanje</h2>
+            <div class="status-item">
+                <span class="status-label">3.3V:</span>
+                <span class="status-value" id="power-3v3">)rawliteral" + String(currentData.supply3V3, 3) + R"rawliteral( V</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">5V:</span>
+                <span class="status-value" id="power-5v">)rawliteral" + String(currentData.supply5V, 3) + R"rawliteral( V</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Poraba:</span>
+                <span class="status-value" id="power-current">)rawliteral" + String(currentData.currentPower, 1) + R"rawliteral( W</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Energija:</span>
+                <span class="status-value" id="power-energy">)rawliteral" + String(currentData.energyConsumption, 1) + R"rawliteral( Wh</span>
+            </div>
+        </div>
+
+        <!-- Network Card -->
+        <div class="card">
+            <h2>Omrežje</h2>
+            <div class="status-item">
+                <span class="status-label">NTP sinhronizacija:</span>
+                <span class="status-value" id="net-ntp">)rawliteral" + (timeSynced ? "DA" : "NE") + R"rawliteral(</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Zunanji podatki:</span>
+                <span class="status-value" id="net-external">)rawliteral" + (externalDataValid ? "VELJAVNI" : "NEVELJAVNI") + R"rawliteral(</span>
+            </div>
+        </div>
+
+        <!-- System Card -->
+        <div class="card">
+            <h2>Sistem</h2>
+            <div class="status-item">
+                <span class="status-label">Prosti RAM:</span>
+                <span class="status-value" id="sys-ram">)rawliteral" + String(ramPercent, 1) + R"rawliteral( %</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Uptime:</span>
+                <span class="status-value" id="sys-uptime">)rawliteral" + uptimeStr + R"rawliteral(</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Log buffer:</span>
+                <span class="status-value" id="sys-log">)rawliteral" + String(logBuffer.length()) + R"rawliteral( B</span>
+            </div>
+        </div>
+
+        <!-- Devices Card -->
+        <div class="card">
+            <h2>Naprave</h2>
+            <div class="status-item">
+                <span class="status-label">REW:</span>
+                <span class="status-value" id="dev-rew">)rawliteral" + (rewStatus.isOnline ? "ONLINE" : "OFFLINE") + R"rawliteral(</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">UT_DEW:</span>
+                <span class="status-value" id="dev-ut-dew">)rawliteral" + (utDewStatus.isOnline ? "ONLINE" : "OFFLINE") + R"rawliteral(</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">KOP_DEW:</span>
+                <span class="status-value" id="dev-kop-dew">)rawliteral" + (kopDewStatus.isOnline ? "ONLINE" : "OFFLINE") + R"rawliteral(</span>
+            </div>
+        </div>
+
+        <!-- Errors Card -->
+        <div class="card">
+            <h2>Napake</h2>
+            <div id="errors-content" class="status-value">)rawliteral" + getErrorDescription(currentData.errorFlags) + R"rawliteral(</div>
+        </div>
     </div>
 
     <div class="nav-container">
         <a href="/settings" class="nav-button">Nastavitve</a>
         <a href="/help" class="nav-button">Pomoč</a>
     </div>
+
+    <script>
+        function updatePage() {
+            fetch('/current-data')
+                .then(response => response.json())
+                .then(data => {
+                    // Update time display
+                    const timeDisplay = document.getElementById("timeDisplay");
+                    timeDisplay.textContent = `Trenutni čas: ${data.current_time} | DND: ${data.is_dnd ? "DA" : "NE"} | NND: ${data.is_nnd ? "DA" : "NE"}`;
+
+                    // Update WC data
+                    document.getElementById("wc-pressure").textContent = data.bathroom_pressure + " hPa";
+                    document.getElementById("wc-light").textContent = data.wc_light ? "ON" : "OFF";
+                    document.getElementById("wc-fan").textContent = data.wc_disabled ? "DISABLED" : (data.wc_fan ? "ON" : "OFF");
+                    document.getElementById("wc-remaining").textContent = data.wc_remaining + " s";
+
+                    // Update KOP data
+                    document.getElementById("kop-temp").textContent = data.bathroom_temp + " °C";
+                    document.getElementById("kop-humidity").textContent = data.bathroom_humidity + " %";
+                    document.getElementById("kop-light1").textContent = data.bathroom_light1 ? "ON" : "OFF";
+                    document.getElementById("kop-light2").textContent = data.bathroom_light2 ? "ON" : "OFF";
+                    document.getElementById("kop-fan").textContent = data.bathroom_disabled ? "DISABLED" : (data.bathroom_fan ? "ON" : "OFF");
+                    document.getElementById("kop-remaining").textContent = data.bathroom_remaining + " s";
+
+                    // Update UT data
+                    document.getElementById("ut-temp").textContent = data.utility_temp + " °C";
+                    document.getElementById("ut-humidity").textContent = data.utility_humidity + " %";
+                    document.getElementById("ut-light").textContent = data.utility_light ? "ON" : "OFF";
+                    document.getElementById("ut-switch").textContent = data.utility_switch ? "ON" : "OFF";
+                    document.getElementById("ut-fan").textContent = data.utility_disabled ? "DISABLED" : (data.utility_fan ? "ON" : "OFF");
+                    document.getElementById("ut-remaining").textContent = data.utility_remaining + " s";
+
+                    // Update DS data
+                    document.getElementById("ds-temp").textContent = data.living_temp + " °C";
+                    document.getElementById("ds-humidity").textContent = data.living_humidity + " %";
+                    document.getElementById("ds-co2").textContent = data.living_co2 + " ppm";
+                    document.getElementById("ds-window1").textContent = data.living_window1 ? "Odprto" : "Zaprto";
+                    document.getElementById("ds-window2").textContent = data.living_window2 ? "Odprto" : "Zaprto";
+                    document.getElementById("ds-fan-level").textContent = data.living_fan_level;
+                    document.getElementById("ds-duty-cycle").textContent = data.living_duty_cycle + " %";
+                    document.getElementById("ds-remaining").textContent = data.living_remaining + " s";
+
+                    // Update external data
+                    document.getElementById("ext-temp").textContent = data.external_temp + " °C";
+                    document.getElementById("ext-humidity").textContent = data.external_humidity + " %";
+                    document.getElementById("ext-pressure").textContent = data.external_pressure + " hPa";
+                    document.getElementById("ext-light").textContent = data.external_light + " lux";
+
+                    // Update power data
+                    document.getElementById("power-3v3").textContent = data.supply_3v3 + " V";
+                    document.getElementById("power-5v").textContent = data.supply_5v + " V";
+                    document.getElementById("power-current").textContent = data.current_power + " W";
+                    document.getElementById("power-energy").textContent = data.energy_consumption + " Wh";
+
+                    // Update network data
+                    document.getElementById("net-ntp").textContent = data.time_synced ? "DA" : "NE";
+                    document.getElementById("net-external").textContent = data.external_data_valid ? "VELJAVNI" : "NEVELJAVNI";
+
+                    // Update system data
+                    document.getElementById("sys-ram").textContent = data.ram_percent + " %";
+                    document.getElementById("sys-uptime").textContent = data.uptime;
+                    document.getElementById("sys-log").textContent = data.log_buffer_size + " B";
+
+                    // Update devices data
+                    document.getElementById("dev-rew").textContent = data.rew_online ? "ONLINE" : "OFFLINE";
+                    document.getElementById("dev-ut-dew").textContent = data.ut_dew_online ? "ONLINE" : "OFFLINE";
+                    document.getElementById("dev-kop-dew").textContent = data.kop_dew_online ? "ONLINE" : "OFFLINE";
+
+                    // Update errors
+                    const errorDesc = getErrorDescription(data.error_flags);
+                    document.getElementById("errors-content").innerHTML = errorDesc;
+                })
+                .catch(error => console.error('Napaka pri osveževanju:', error));
+        }
+
+        function getErrorDescription(errorFlags) {
+            let errors = "";
+            if (errorFlags & 1) errors += "Senzor BME280 nedelujoč<br>";
+            if (errorFlags & 2) errors += "Senzor SHT41 nedelujoč<br>";
+            if (errorFlags & 4) errors += "LittleFS napaka<br>";
+            if (errorFlags & 32) errors += "HTTP napaka<br>";
+            if (errorFlags & 64) errors += "Napajalna napaka<br>";
+            if (errors === "") errors = "Brez napak";
+            return errors;
+        }
+
+        setInterval(updatePage, 10000);
+        updatePage(); // Initial update
+    </script>
 </body>
 </html>)rawliteral";
 
@@ -1000,6 +1374,66 @@ void handleDataRequest(AsyncWebServerRequest *request) {
   request->send(200, "application/json", json);
 }
 
+void handleCurrentDataRequest(AsyncWebServerRequest *request) {
+  LOG_DEBUG("Web", "Zahtevek: GET /current-data");
+
+  float ramPercent = (ESP.getHeapSize() - ESP.getFreeHeap()) * 100.0 / ESP.getHeapSize();
+  String uptimeStr = formatUptime(millis() / 1000);
+
+  String json = "{" +
+                String("\"current_time\":\"") + String(myTZ.dateTime().c_str()) + "\"," +
+                String("\"is_dnd\":") + String(isDNDTime() ? "true" : "false") + "," +
+                String("\"is_nnd\":") + String(isNNDTime() ? "true" : "false") + "," +
+                String("\"bathroom_temp\":") + String(currentData.bathroomTemp, 1) + "," +
+                String("\"bathroom_humidity\":") + String(currentData.bathroomHumidity, 1) + "," +
+                String("\"bathroom_pressure\":") + String((int)currentData.bathroomPressure) + "," +
+                String("\"bathroom_light1\":") + String(currentData.bathroomLight1 ? "true" : "false") + "," +
+                String("\"bathroom_light2\":") + String(currentData.bathroomLight2 ? "true" : "false") + "," +
+                String("\"bathroom_fan\":") + String(currentData.bathroomFan ? "true" : "false") + "," +
+                String("\"bathroom_disabled\":") + String(currentData.disableBathroom ? "true" : "false") + "," +
+                String("\"bathroom_remaining\":") + String(getRemainingTime(0)) + "," +
+                String("\"utility_temp\":") + String(currentData.utilityTemp, 1) + "," +
+                String("\"utility_humidity\":") + String(currentData.utilityHumidity, 1) + "," +
+                String("\"utility_light\":") + String(currentData.utilityLight ? "true" : "false") + "," +
+                String("\"utility_switch\":") + String(currentData.utilitySwitch ? "true" : "false") + "," +
+                String("\"utility_fan\":") + String(currentData.utilityFan ? "true" : "false") + "," +
+                String("\"utility_disabled\":") + String(currentData.disableUtility ? "true" : "false") + "," +
+                String("\"utility_remaining\":") + String(getRemainingTime(1)) + "," +
+                String("\"wc_light\":") + String(currentData.wcLight ? "true" : "false") + "," +
+                String("\"wc_fan\":") + String(currentData.wcFan ? "true" : "false") + "," +
+                String("\"wc_disabled\":") + String(currentData.disableWc ? "true" : "false") + "," +
+                String("\"wc_remaining\":") + String(getRemainingTime(2)) + "," +
+                String("\"living_temp\":") + String(currentData.livingTemp, 1) + "," +
+                String("\"living_humidity\":") + String(currentData.livingHumidity, 1) + "," +
+                String("\"living_co2\":") + String((int)currentData.livingCO2) + "," +
+                String("\"living_window1\":") + String(currentData.windowSensor1 ? "true" : "false") + "," +
+                String("\"living_window2\":") + String(currentData.windowSensor2 ? "true" : "false") + "," +
+                String("\"living_fan_level\":") + String(currentData.livingExhaustLevel) + "," +
+                String("\"living_duty_cycle\":") + String(currentData.livingRoomDutyCycle, 1) + "," +
+                String("\"living_disabled\":") + String(currentData.disableLivingRoom ? "true" : "false") + "," +
+                String("\"living_remaining\":") + String(getRemainingTime(4)) + "," +
+                String("\"external_temp\":") + String(currentData.externalTemp, 1) + "," +
+                String("\"external_humidity\":") + String(currentData.externalHumidity, 1) + "," +
+                String("\"external_pressure\":") + String(currentData.externalPressure, 1) + "," +
+                String("\"external_light\":") + String(currentData.externalLight, 1) + "," +
+                String("\"supply_3v3\":") + String(currentData.supply3V3, 3) + "," +
+                String("\"supply_5v\":") + String(currentData.supply5V, 3) + "," +
+                String("\"current_power\":") + String(currentData.currentPower, 1) + "," +
+                String("\"energy_consumption\":") + String(currentData.energyConsumption, 1) + "," +
+                String("\"time_synced\":") + String(timeSynced ? "true" : "false") + "," +
+                String("\"external_data_valid\":") + String(externalDataValid ? "true" : "false") + "," +
+                String("\"ram_percent\":") + String(ramPercent, 1) + "," +
+                String("\"uptime\":\"") + uptimeStr + "\"," +
+                String("\"log_buffer_size\":") + String(logBuffer.length()) + "," +
+                String("\"rew_online\":") + String(rewStatus.isOnline ? "true" : "false") + "," +
+                String("\"ut_dew_online\":") + String(utDewStatus.isOnline ? "true" : "false") + "," +
+                String("\"kop_dew_online\":") + String(kopDewStatus.isOnline ? "true" : "false") + "," +
+                String("\"error_flags\":") + String((int)currentData.errorFlags) +
+                "}";
+
+  request->send(200, "application/json", json);
+}
+
 void handlePostSettings(AsyncWebServerRequest *request) {
   LOG_DEBUG("Web", "Zahtevek: POST /settings/update");
   String errorMessage = "";
@@ -1135,6 +1569,7 @@ void setupWebServer() {
   server.on("/settings", HTTP_GET, handleSettings);
   server.on("/help", HTTP_GET, handleHelp);
   server.on("/data", HTTP_GET, handleDataRequest);
+  server.on("/current-data", HTTP_GET, handleCurrentDataRequest);
   server.on("/settings/update", HTTP_POST, handlePostSettings);
   server.on("/settings/reset", HTTP_POST, handleResetSettings);
   server.on("/settings/status", HTTP_GET, handleSettingsStatus);
