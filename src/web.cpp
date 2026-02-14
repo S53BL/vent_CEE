@@ -5,6 +5,7 @@
 #include "logging.h"
 #include "system.h"
 #include "message_fields.h"
+#include "help_html.h"
 
 // Helper functions for root page
 String formatUptime(unsigned long seconds) {
@@ -268,8 +269,8 @@ const char* HTML_SETTINGS = R"rawliteral(
             background-color: #6bb3ff;
         }
         .main-content {
-            margin-left: 180px;
-            margin-right: 180px;
+            margin-left: 140px;
+            margin-right: 140px;
             padding: 20px;
         }
         .right-sidebar {
@@ -318,10 +319,10 @@ const char* HTML_SETTINGS = R"rawliteral(
             background-color: #4da6ff;
         }
         .right-sidebar .reset-button {
-            background-color: #ff6b6b;
+            background-color: #ffaa00;
         }
         .right-sidebar .reset-button:hover {
-            background-color: #ff5252;
+            background-color: #e69500;
         }
         h1 {
             text-align: center;
@@ -545,90 +546,90 @@ const char* HTML_SETTINGS = R"rawliteral(
     <div class="form-container">
             <form id="settingsForm">
                 <div class="form-group">
-                    <label for="humThreshold">Meja vlage Kopalnica/Utility</label>
+                    <label for="humThreshold">Mejna vrednost vlage za kopalnico in utility</label>
                     <input type="number" name="humThreshold" id="humThreshold" step="1" min="0" max="100">
-                    <div class="description">Meja vlage za avtomatsko aktivacijo ventilatorjev v Kopalnici in Utility (0–100 %)</div>
+                    <div class="description">Relativna vlaga v kopalnici ali utilityju, ki sproži samodejni vklop ventilatorja. Če se ventilator vklopi prepozno po prhanju, znižajte vrednost (0–100 %).</div>
                 </div>
 
                 <div class="form-group">
-                    <label for="fanDuration">Trajanje ventilatorjev</label>
+                    <label for="fanDuration">Čas delovanja ventilatorjev po sprožilcu</label>
                     <input type="number" name="fanDuration" id="fanDuration" step="1" min="60" max="6000">
-                    <div class="description">Trajanje delovanja ventilatorjev po sprožilcu (60–6000 s)</div>
+                    <div class="description">Čas delovanja ventilatorja po vsakem sprožilcu (ročnem, polavtomatskem ali avtomatskem). Če prezračevanje traja premalo, povečajte na 300 s za boljše sušenje (60–6000 s).</div>
                 </div>
 
                 <div class="form-group">
-                    <label for="fanOffDuration">Čakanje Utility/WC</label>
+                    <label for="fanOffDuration">Minimalni premor med vklopi v utilityju in WC-ju</label>
                     <input type="number" name="fanOffDuration" id="fanOffDuration" step="1" min="60" max="6000">
-                    <div class="description">Čas čakanja pred naslednjim ciklom v Utility in WC (60–6000 s)</div>
+                    <div class="description">Minimalni premor med zaporednimi vklopi ventilatorja v utilityju ali WC-ju, da se izogne prepogostim ciklom. Če se vklaplja prevečkrat, povečajte na 1800 s (60–6000 s).</div>
                 </div>
 
                 <div class="form-group">
-                    <label for="fanOffDurationKop">Čakanje Kopalnica</label>
+                    <label for="fanOffDurationKop">Minimalni premor med vklopi v kopalnici</label>
                     <input type="number" name="fanOffDurationKop" id="fanOffDurationKop" step="1" min="60" max="6000">
-                    <div class="description">Čas čakanja pred naslednjim ciklom v Kopalnici (60–6000 s)</div>
+                    <div class="description">Minimalni premor med zaporednimi vklopi v kopalnici, ločeno od drugih prostorov. Če želite hitrejše ponovno prezračevanje po prhanju, skrajšajte na 600 s (60–6000 s).</div>
                 </div>
 
                 <div class="form-group">
-                    <label for="tempLowThreshold">Meja nizke zunanje temperature</label>
+                    <label for="tempLowThreshold">Prag za zmanjšanje delovanja pri nizki zunanji temperaturi</label>
                     <input type="number" name="tempLowThreshold" id="tempLowThreshold" step="1" min="-20" max="40">
-                    <div class="description">Zunanja temperatura, pod katero se delovanje ventilatorjev zmanjša (-20–40 °C)</div>
+                    <div class="description">Zunanja temperatura, pod katero se trajanje ventilatorjev skrajša na polovico, da se zmanjša prepih. Če je pozimi premrzlo, dvignite na 10 °C (-20–40 °C).</div>
                 </div>
 
                 <div class="form-group">
-                    <label for="tempMinThreshold">Meja minimalne zunanje temperature</label>
+                    <label for="tempMinThreshold">Prag za ustavitev delovanja pri minimalni zunanji temperaturi</label>
                     <input type="number" name="tempMinThreshold" id="tempMinThreshold" step="1" min="-20" max="40">
-                    <div class="description">Zunanja temperatura, pod katero se ventilatorji ustavijo (-20–40 °C)</div>
+                    <div class="description">Zunanja temperatura, pod katero se ventilatorji popolnoma ustavijo, da se izogne vnosu mrzlega zraka. Če želite delovanje v globokem mrazu, znižajte na -15 °C (-20–40 °C).</div>
                 </div>
 
                 <div class="form-group">
-                    <label for="dndAllowAutomatic">DND dovoli avtomatiko</label>
+                    <label for="dndAllowAutomatic">Dovoljenje za samodejno prezračevanje ponoči</label>
                     <select name="dndAllowAutomatic" id="dndAllowAutomatic">
                         <option value="0">0 (Izključeno)</option>
                         <option value="1">1 (Vključeno)</option>
                     </select>
-                    <div class="description">Dovoli avtomatsko aktivacijo ventilatorjev med DND (nočni čas)</div>
+                    <div class="description">Dovoli samodejne vklope ventilatorjev zaradi vlage med nočnim časom (22:00–06:00). Če vas hrup moti ponoči, izklopite.</div>
                 </div>
 
                 <div class="form-group">
-                    <label for="dndAllowSemiautomatic">DND dovoli polavtomatiko</label>
+                    <label for="dndAllowSemiautomatic">Dovoljenje za polsamodejno prezračevanje ponoči</label>
                     <select name="dndAllowSemiautomatic" id="dndAllowSemiautomatic">
                         <option value="0">0 (Izključeno)</option>
                         <option value="1">1 (Vključeno)</option>
                     </select>
-                    <div class="description">Dovoli polavtomatske sprožilce (npr. luči) med DND</div>
+                    <div class="description">Dovoli vklope ventilatorjev ob ugasnjeni luči med nočnim časom. Če nočni obiski WC-ja povzročajo hrup, izklopite.</div>
                 </div>
 
                 <div class="form-group">
-                    <label for="dndAllowManual">DND dovoli ročno upravljanje</label>
+                    <label for="dndAllowManual">Dovoljenje za ročno prezračevanje ponoči</label>
                     <select name="dndAllowManual" id="dndAllowManual">
                         <option value="0">0 (Izključeno)</option>
                         <option value="1">1 (Vključeno)</option>
                     </select>
-                    <div class="description">Dovoli ročne sprožilce med DND</div>
+                    <div class="description">Dovoli ročne vklope ventilatorjev (preko tipke ali spleta) med nočnim časom. Če želite popoln mir, izklopite.</div>
                 </div>
 
                 <div class="form-group">
-                    <label for="cycleDurationDS">Trajanje cikla Dnevni prostor</label>
+                    <label for="cycleDurationDS">Dolžina prezračevalnega cikla v dnevnem prostoru</label>
                     <input type="number" name="cycleDurationDS" id="cycleDurationDS" step="1" min="60" max="6000">
-                    <div class="description">Trajanje cikla prezračevanja v Dnevnem prostoru (60–6000 s)</div>
+                    <div class="description">Skupni čas enega prezračevalnega cikla v dnevnem prostoru. Krajši cikli pomenijo hitrejši odziv na spremembe, ampak pogostejše vklope (60–6000 s).</div>
                 </div>
 
                 <div class="form-group">
-                    <label for="cycleActivePercentDS">Aktivni delež cikla Dnevni prostor</label>
+                    <label for="cycleActivePercentDS">Osnovni delež aktivnega delovanja cikla v dnevnem prostoru</label>
                     <input type="number" name="cycleActivePercentDS" id="cycleActivePercentDS" step="1" min="0" max="100">
-                    <div class="description">Aktivni delež cikla v Dnevnem prostoru (0–100 %)</div>
+                    <div class="description">Osnovni odstotek časa, ko ventilator deluje v ciklu (npr. 30 % od 60 s = 18 s delovanja). Če je zrak slab, povečajte na 40 % za močnejše prezračevanje (0–100 %).</div>
                 </div>
 
                 <div class="form-group">
-                    <label for="humThresholdDS">Meja vlage Dnevni prostor</label>
+                    <label for="humThresholdDS">Mejna vrednost vlage v dnevnem prostoru</label>
                     <input type="number" name="humThresholdDS" id="humThresholdDS" step="1" min="0" max="100">
-                    <div class="description">Meja vlage za povečanje cikla v Dnevnem prostoru (0–100 %)</div>
+                    <div class="description">Notranja vlaga v dnevnem prostoru, ki sproži povečanje cikla prezračevanja. Če vlaga naraste hitro (npr. pri kuhanju), znižajte na 55 % (0–100 %).</div>
                 </div>
 
                 <div class="form-group">
-                    <label for="humThresholdHighDS">Visoka meja vlage Dnevni prostor</label>
+                    <label for="humThresholdHighDS">Zgornja mejna vrednost vlage v dnevnem prostoru</label>
                     <input type="number" name="humThresholdHighDS" id="humThresholdHighDS" step="1" min="0" max="100">
-                    <div class="description">Visoka meja vlage za večje povečanje cikla v Dnevnem prostoru (0–100 %)</div>
+                    <div class="description">Višja notranja vlaga za močnejše povečanje cikla v dnevnem prostoru. Za agresivnejši odziv na visoko vlago znižajte vrednost (0–100 %).</div>
                 </div>
 
                 <div class="form-group">
@@ -638,51 +639,51 @@ const char* HTML_SETTINGS = R"rawliteral(
                 </div>
 
                 <div class="form-group">
-                    <label for="co2ThresholdLowDS">Nizka meja CO2 Dnevni prostor</label>
+                    <label for="co2ThresholdLowDS">Spodnja mejna vrednost CO2 v dnevnem prostoru</label>
                     <input type="number" name="co2ThresholdLowDS" id="co2ThresholdLowDS" step="1" min="400" max="2000">
-                    <div class="description">Nizka meja CO2 za povečanje cikla v Dnevnem prostoru (400–2000 ppm)</div>
+                    <div class="description">Raven CO2 v dnevnem prostoru za začetno povečanje cikla. Če zrak postane "težek" hitro (npr. pri več ljudeh), znižajte na 800 ppm (400–2000 ppm).</div>
                 </div>
 
                 <div class="form-group">
-                    <label for="co2ThresholdHighDS">Visoka meja CO2 Dnevni prostor</label>
+                    <label for="co2ThresholdHighDS">Zgornja mejna vrednost CO2 v dnevnem prostoru</label>
                     <input type="number" name="co2ThresholdHighDS" id="co2ThresholdHighDS" step="1" min="400" max="2000">
-                    <div class="description">Visoka meja CO2 za večje povečanje cikla v Dnevnem prostoru (400–2000 ppm)</div>
+                    <div class="description">Višja raven CO2 za maksimalno povečanje cikla v dnevnem prostoru. Za močnejši odziv na slabo kakovost zraka znižajte vrednost (400–2000 ppm).</div>
                 </div>
 
                 <div class="form-group">
-                    <label for="incrementPercentLowDS">Nizko povečanje Dnevni prostor</label>
+                    <label for="incrementPercentLowDS">Dodatno povečanje cikla pri spodnjih mejah v dnevnem prostoru</label>
                     <input type="number" name="incrementPercentLowDS" id="incrementPercentLowDS" step="1" min="0" max="100">
-                    <div class="description">Nizko povečanje cikla ob mejah vlage/CO2 v Dnevnem prostoru (0–100 %)</div>
+                    <div class="description">Dodatni odstotek delovanja cikla ob dosegu nizke meje vlage ali CO2. Če se prezračevanje poveča premalo, dvignite na 20 % (0–100 %).</div>
                 </div>
 
                 <div class="form-group">
-                    <label for="incrementPercentHighDS">Visoko povečanje Dnevni prostor</label>
+                    <label for="incrementPercentHighDS">Dodatno povečanje cikla pri zgornjih mejah v dnevnem prostoru</label>
                     <input type="number" name="incrementPercentHighDS" id="incrementPercentHighDS" step="1" min="0" max="100">
-                    <div class="description">Visoko povečanje cikla ob visokih mejah vlage/CO2 v Dnevnem prostoru (0–100 %)</div>
+                    <div class="description">Dodatni odstotek delovanja cikla ob dosegu visoke meje vlage ali CO2. Za ekstremne situacije povečajte na 60 % za hitrejše prezračevanje (0–100 %).</div>
                 </div>
 
                 <div class="form-group">
-                    <label for="incrementPercentTempDS">Povečanje za temperaturo Dnevni prostor</label>
+                    <label for="incrementPercentTempDS">Dodatno povečanje cikla za uravnavanje temperature v dnevnem prostoru</label>
                     <input type="number" name="incrementPercentTempDS" id="incrementPercentTempDS" step="1" min="0" max="100">
-                    <div class="description">Povečanje cikla za hlajenje/ogrevanje v Dnevnem prostoru (0–100 %)</div>
+                    <div class="description">Dodatni odstotek cikla za uravnavanje temperature (hlajenje ali ogrevanje z zunanjim zrakom). Če poleti želite več hlajenja, povečajte na 30 % (0–100 %).</div>
                 </div>
 
                 <div class="form-group">
-                    <label for="tempIdealDS">Idealna temperatura Dnevni prostor</label>
+                    <label for="tempIdealDS">Želena temperatura v dnevnem prostoru</label>
                     <input type="number" name="tempIdealDS" id="tempIdealDS" step="1" min="-20" max="40">
-                    <div class="description">Idealna temperatura v Dnevnem prostoru (-20–40 °C)</div>
+                    <div class="description">Ciljna notranja temperatura v dnevnem prostoru, ki usmerja prilagajanje cikla. Če želite hladnejši dom, znižajte na 22 °C (-20–40 °C).</div>
                 </div>
 
                 <div class="form-group">
-                    <label for="tempExtremeHighDS">Ekstremno visoka temperatura Dnevni prostor</label>
+                    <label for="tempExtremeHighDS">Prag za zmanjšanje cikla pri ekstremno visoki zunanji temperaturi</label>
                     <input type="number" name="tempExtremeHighDS" id="tempExtremeHighDS" step="1" min="-20" max="40">
-                    <div class="description">Ekstremno visoka zunanja temperatura za zmanjšanje cikla (-20–40 °C)</div>
+                    <div class="description">Zunanja temperatura, pri kateri se cikel prezračevanja zmanjša, da se izogne vnosu vročega zraka. Če poleti ne želite dodatne toplote, znižajte na 28 °C (-20–40 °C).</div>
                 </div>
 
                 <div class="form-group">
-                    <label for="tempExtremeLowDS">Ekstremno nizka temperatura Dnevni prostor</label>
+                    <label for="tempExtremeLowDS">Prag za zmanjšanje cikla pri ekstremno nizki zunanji temperaturi</label>
                     <input type="number" name="tempExtremeLowDS" id="tempExtremeLowDS" step="1" min="-20" max="40">
-                    <div class="description">Ekstremno nizka zunanja temperatura za zmanjšanje cikla (-20–40 °C)</div>
+                    <div class="description">Zunanja temperatura, pri kateri se cikel prezračevanja zmanjša, da se izogne vnosu mrzlega zraka. Če pozimi želite manj prepiha, dvignite na -5 °C (-20–40 °C).</div>
                 </div>
             </form>
         </div>
@@ -1245,11 +1246,11 @@ const char* HTML_SETTINGS_SENSOR_OFFSETS = R"rawliteral(
     <div id="message" class="message" style="display: none;"></div>
 
     <form class="settings-form" id="settingsForm">
-        <div class="form-group">
-            <label for="bmeTempOffset">Offset temperature BME280 (°C)</label>
-            <input type="number" id="bmeTempOffset" name="bmeTempOffset" step="0.1" min="-10.0" max="10.0" required>
-            <div class="description">Prilagoditev temperature BME280 senzorja (-10.0 do +10.0 °C)</div>
-        </div>
+                <div class="form-group">
+                    <label for="humExtremeHighDS">Prag za zmanjšanje cikla pri ekstremno visoki zunanji vlagi</label>
+                    <input type="number" name="humExtremeHighDS" id="humExtremeHighDS" step="1" min="0" max="100">
+                    <div class="description">Zunanja vlaga, pri kateri se cikel prezračevanja zmanjša, da se izogne vnosu dodatne vlage. Če zunaj vlage ne želite vnašati, dvignite na 75 % (0–100 %).</div>
+                </div>
 
         <div class="form-group">
             <label for="bmeHumidityOffset">Offset vlažnosti BME280 (%)</label>
@@ -1400,7 +1401,11 @@ String settingsUpdateMessage = "";
 
 // Handle root page with cards layout
 void handleRoot(AsyncWebServerRequest *request) {
-  LOG_DEBUG("Web", "Zahtevek: GET /");
+  // Log only for initial page loads, not AJAX refreshes
+  if (!request->hasHeader("X-Requested-With") ||
+      request->getHeader("X-Requested-With")->value() != "XMLHttpRequest") {
+    LOG_DEBUG("Web", "Zahtevek: GET /");
+  }
 
   // Calculate system data
   float ramPercent = (ESP.getHeapSize() - ESP.getFreeHeap()) * 100.0 / ESP.getHeapSize();
@@ -1871,171 +1876,22 @@ void handleRoot(AsyncWebServerRequest *request) {
 
 // Handle help page
 void handleHelp(AsyncWebServerRequest *request) {
-  LOG_DEBUG("Web", "Zahtevek: GET /help");
+  // Log only for initial page loads, not AJAX refreshes
+  if (!request->hasHeader("X-Requested-With") ||
+      request->getHeader("X-Requested-With")->value() != "XMLHttpRequest") {
+    LOG_DEBUG("Web", "Zahtevek: GET /help");
+  }
 
-  String html = R"rawliteral(
-<!DOCTYPE HTML>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>Pomoč - CEE Ventilacijski sistem</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
-            font-size: 16px;
-            background: #101010;
-            color: #e0e0e0;
-            display: flex;
-        }
-        .sidebar {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 160px;
-            height: 100vh;
-            background: #1a1a1a;
-            border: 1px solid #333;
-            border-radius: 0;
-            padding: 20px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-            overflow-y: auto;
-            z-index: 1000;
-        }
-        .sidebar h2 {
-            color: #4da6ff;
-            margin-top: 0;
-            margin-bottom: 20px;
-            font-size: 18px;
-            text-align: center;
-            border-bottom: 2px solid #4da6ff;
-            padding-bottom: 5px;
-        }
-        .sidebar .nav-button {
-            display: block;
-            width: 100%;
-            padding: 15px;
-            margin-bottom: 10px;
-            background-color: #4da6ff;
-            color: #101010;
-            text-decoration: none;
-            border-radius: 6px;
-            font-size: 14px;
-            font-weight: bold;
-            text-align: center;
-            border: none;
-            cursor: pointer;
-            box-sizing: border-box;
-        }
-        .sidebar .nav-button:hover {
-            background-color: #6bb3ff;
-        }
-        .main-content {
-            margin-left: 180px;
-            padding: 20px;
-        }
-        h1 {
-            text-align: center;
-            font-size: 24px;
-            color: #e0e0e0;
-            margin-bottom: 30px;
-        }
-        .help-container {
-            max-width: 800px;
-            margin: 0 auto;
-            background: #1a1a1a;
-            border: 1px solid #333;
-            border-radius: 8px;
-            padding: 20px;
-        }
-        .nav-link {
-            display: inline-block;
-            margin-bottom: 20px;
-            padding: 10px 20px;
-            background-color: #4da6ff;
-            color: #101010;
-            text-decoration: none;
-            border-radius: 6px;
-            font-weight: bold;
-        }
-        .nav-link:hover {
-            background-color: #6bb3ff;
-        }
-        h2 {
-            color: #4da6ff;
-            margin-top: 30px;
-            margin-bottom: 10px;
-        }
-        p {
-            margin-bottom: 15px;
-            line-height: 1.4;
-        }
-        ul {
-            margin-bottom: 20px;
-            padding-left: 20px;
-        }
-        li {
-            margin-bottom: 8px;
-        }
-    </style>
-</head>
-<body>
-    <div class="sidebar">
-        <h2>Navigacija</h2>
-        <a href="/" class="nav-button">Domača stran</a>
-        <a href="/settings" class="nav-button">Nastavitve</a>
-        <a href="/sensor-offsets" class="nav-button">Nastavitve senzorjev</a>
-        <a href="/help" class="nav-button">Pomoč</a>
-        <h3 style="color: #4da6ff; margin: 20px 0 10px 0; font-size: 14px;">Druge enote</h3>
-        <a href="http://192.168.2.190/" class="nav-button" style="font-size: 12px;">REW</a>
-        <a href="http://192.168.2.191/" class="nav-button" style="font-size: 12px;">SEW</a>
-        <a href="http://192.168.2.193/" class="nav-button" style="font-size: 12px;">UT_DEW</a>
-        <a href="http://192.168.2.194/" class="nav-button" style="font-size: 12px;">KOP_DEW</a>
-    </div>
-    <div class="main-content">
-        <h1>Pomoč - CEE Ventilacijski sistem</h1>
-
-        <div class="help-container">
-            <a href="/" class="nav-link">← Nazaj na začetno stran</a>
-
-        <h2>Sistemski status</h2>
-        <p>Na začetni strani vidite trenutne vrednosti senzorjev iz različnih prostorov sistema:</p>
-        <ul>
-            <li><strong>EXT:</strong> Zunanji senzorji (temperatura, vlaga, tlak, svetloba)</li>
-            <li><strong>DS:</strong> Dnevni prostor (temperatura, vlaga, CO2)</li>
-            <li><strong>UT:</strong> Utility (temperatura, vlaga)</li>
-            <li><strong>KOP:</strong> Kopalnica (temperatura, vlaga)</li>
-            <li><strong>WC:</strong> WC (tlak)</li>
-            <li><strong>TIME_WIFI:</strong> Poraba energije in čas zadnje posodobitve</li>
-        </ul>
-
-        <h2>Nastavitve</h2>
-        <p>V razdelku nastavitve lahko prilagodite parametre ventilacijskega sistema:</p>
-        <ul>
-            <li><strong>Meje vlage:</strong> Kdaj se ventilatorji vklopijo</li>
-            <li><strong>Trajanje delovanja:</strong> Koliko časa ventilatorji delujejo</li>
-            <li><strong>Čas počitka:</strong> Koliko časa počakajo pred naslednjim ciklom</li>
-            <li><strong>Temperaturne meje:</strong> Kako temperatura vpliva na ventilatorje</li>
-            <li><strong>DND nastavitve:</strong> Ali ventilatorji delujejo med nočnim časom</li>
-            <li><strong>Dnevni prostor:</strong> Parametri za avtomatsko ventilacijo dnevnega prostora</li>
-        </ul>
-
-        <h2>Shranjevanje nastavitev</h2>
-        <p>Po spremembi nastavitev kliknite "Shrani" za uveljavitev sprememb. Sistem bo prikazal potrditev uspešnega shranjevanja.</p>
-
-        <h2>Tehnična podpora</h2>
-        <p>Za dodatno pomoč ali težave s sistemom preverite log datoteke ali se obrnite na administratorja sistema.</p>
-        </div>
-    </div>
-</body>
-</html>)rawliteral";
-
-  request->send(200, "text/html", html);
+  request->send(200, "text/html", HTML_HELP);
 }
 
 // Handle settings page
 void handleSettings(AsyncWebServerRequest *request) {
-  LOG_DEBUG("Web", "Zahtevek: GET /settings");
+  // Log only for initial page loads, not AJAX refreshes
+  if (!request->hasHeader("X-Requested-With") ||
+      request->getHeader("X-Requested-With")->value() != "XMLHttpRequest") {
+    LOG_DEBUG("Web", "Zahtevek: GET /settings");
+  }
 
   // Send the HTML directly
   request->send(200, "text/html", HTML_SETTINGS);
@@ -2065,7 +1921,7 @@ void handleDataRequest(AsyncWebServerRequest *request) {
       uint16_t calculated_crc = calculateCRC((const uint8_t*)&tempSettings, sizeof(Settings));
 
       if (calculated_crc == stored_crc) {
-        LOG_DEBUG("Web", "Settings uspešno prebrane iz NVS (CRC: 0x%04X)", calculated_crc);
+        LOG_INFO("Web", "naloženo (CRC %04X)", calculated_crc);
       } else {
         LOG_WARN("Web", "CRC neustreza za /data (izračunan: 0x%04X, shranjen: 0x%04X) - uporabljene privzete vrednosti", calculated_crc, stored_crc);
         dataValid = false;
@@ -2274,8 +2130,11 @@ void handlePostSettings(AsyncWebServerRequest *request) {
   // Shrani v NVS
   settings = newSettings;
   saveSettings();
+  uint16_t new_crc = calculateCRC((const uint8_t*)&settings, sizeof(Settings));
 
-  LOG_INFO("Web", "Nastavitve shranjene");
+  LOG_INFO("Web", "Shranjene vrednosti: humThreshold=%.1f, fanDuration=%d, tempLowThreshold=%.1f, cycleDurationDS=%d, humThresholdDS=%.1f, co2ThresholdLowDS=%d, tempIdealDS=%.1f CRC=%04X",
+           settings.humThreshold, settings.fanDuration, settings.tempLowThreshold, settings.cycleDurationDS,
+           settings.humThresholdDS, settings.co2ThresholdLowDS, settings.tempIdealDS, new_crc);
 
   settingsUpdateSuccess = true;
   settingsUpdateMessage = "Nastavitve shranjene!";
@@ -2314,7 +2173,11 @@ void handleSettingsStatus(AsyncWebServerRequest *request) {
 
 // Sensor offsets handlers
 void handleSensorOffsets(AsyncWebServerRequest *request) {
-  LOG_DEBUG("Web", "Zahtevek: GET /sensor-offsets");
+  // Log only for initial page loads, not AJAX refreshes
+  if (!request->hasHeader("X-Requested-With") ||
+      request->getHeader("X-Requested-With")->value() != "XMLHttpRequest") {
+    LOG_DEBUG("Web", "Zahtevek: GET /sensor-offsets");
+  }
   request->send(200, "text/html", HTML_SETTINGS_SENSOR_OFFSETS);
 }
 

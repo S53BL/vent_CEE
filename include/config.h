@@ -111,8 +111,8 @@ struct Settings {
     bool dndAllowableAutomatic = true;
     bool dndAllowableSemiautomatic = true;
     bool dndAllowableManual = true;
-    uint16_t cycleDurationDS = 60; // Spremenjeno iz 3600 za testiranje
-    float cycleActivePercentDS = 30.0; // Spremenjeno iz 10.0 za testiranje
+    uint16_t cycleDurationDS = 3600; 
+    float cycleActivePercentDS = 10.0; 
     float humThresholdDS = 60.0;
     float humThresholdHighDS = 70.0;
     uint16_t co2ThresholdLowDS = 900;

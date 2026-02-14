@@ -26,24 +26,6 @@ void setupVent() {
     digitalWrite(PIN_DNEVNI_ODVOD_1, LOW);
     digitalWrite(PIN_DNEVNI_ODVOD_2, LOW);
     digitalWrite(PIN_DNEVNI_ODVOD_3, LOW);
-
-    // SSR relay test sequence - turn on each relay for 0.5 seconds in order
-    const int relayPins[] = {PIN_KOPALNICA_ODVOD, PIN_UTILITY_ODVOD, PIN_WC_ODVOD, PIN_SKUPNI_VPIH,
-                             PIN_DNEVNI_VPIH, PIN_DNEVNI_ODVOD_1, PIN_DNEVNI_ODVOD_2, PIN_DNEVNI_ODVOD_3};
-    const char* relayNames[] = {"KOP odvod", "UT odvod", "WC odvod", "Skupni vpih",
-                                "DS vpih", "DS odvod stopnja 1", "DS odvod stopnja 2", "DS odvod stopnja 3"};
-
-    logEvent("[Setup] Starting SSR relay test sequence");
-    for (int i = 0; i < 8; i++) {
-        char logMessage[100];
-        snprintf(logMessage, sizeof(logMessage), "[Setup] Testing SSR %d (GPIO %d) - %s", i+1, relayPins[i], relayNames[i]);
-        logEvent(logMessage);
-        digitalWrite(relayPins[i], HIGH);
-        delay(500);
-        digitalWrite(relayPins[i], LOW);
-        delay(100); // Short pause between tests
-    }
-    logEvent("[Setup] SSR relay test sequence completed");
 }
 
 void controlFans() {
