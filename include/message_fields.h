@@ -7,11 +7,11 @@
 #define FIELD_FAN_UTILITY         "fut"   // fan_utility
 #define FIELD_FAN_BATHROOM        "fkop"  // fan_bathroom
 #define FIELD_FAN_LIVING_EXH      "fdse"  // fan_living_exhaust
-#define FIELD_FAN_LIVING_INT      "fdsi"  // fan_living_intake
-#define FIELD_FAN_LIVING          "fliv"  // fan_living
+#define FIELD_FAN_LIVING_INT      "fdsi"  // fan_living_intake // opuščeno
+#define FIELD_FAN_LIVING          "fliv"  // fan_living // opuščeno
 
-#define FIELD_INPUT_BATHROOM_BTN  "ibt"   // input_bathroom_button
-#define FIELD_INPUT_UTILITY_SW    "iut"   // input_utility_switch
+#define FIELD_INPUT_BATHROOM_BTN  "ibt"   // input_bathroom_button // opuščeno
+#define FIELD_INPUT_UTILITY_SW    "iut"   // input_utility_switch // opuščeno
 #define FIELD_INPUT_BATHROOM_L1   "il1"   // input_bathroom_light_1
 #define FIELD_INPUT_BATHROOM_L2   "il2"   // input_bathroom_light_2
 #define FIELD_INPUT_UTILITY_L     "iul"   // input_utility_light
@@ -23,8 +23,8 @@
 #define FIELD_TIME_UTILITY        "tut"   // time_utility
 #define FIELD_TIME_BATHROOM       "tkop"  // time_bathroom
 #define FIELD_TIME_LIVING_EXH     "tdse"  // time_living_exhaust
-#define FIELD_TIME_LIVING_INT     "tdsi"  // time_living_intake
-#define FIELD_TIME_LIVING         "tliv"  // time_living
+#define FIELD_TIME_LIVING_INT     "tdsi"  // time_living_intake // opuščeno
+#define FIELD_TIME_LIVING         "tliv"  // time_living // opuščeno
 
 #define FIELD_ERROR_BME280        "ebm"   // error_bme280
 #define FIELD_ERROR_SHT41         "esht"  // error_sht41

@@ -637,7 +637,7 @@ void controlLivingRoom() {
         }
 
     // Handle window/open door disable
-        if (!(currentData.windowSensor1 && currentData.windowSensor2) || currentData.disableLivingRoom) {
+        if ((currentData.windowSensor1 || currentData.windowSensor2) || currentData.disableLivingRoom) {
             if (fanActive) {
                 digitalWrite(PIN_DNEVNI_VPIH, LOW);
                 digitalWrite(PIN_DNEVNI_ODVOD_1, LOW);
@@ -697,7 +697,7 @@ void controlLivingRoom() {
             cyclePercent *= 0.5;
             reason = "Hext>humExtremeHighDS";
         }
-        if (!(currentData.windowSensor1 && currentData.windowSensor2)) {
+        if ((currentData.windowSensor1 || currentData.windowSensor2)) {
             cyclePercent = 0.0;
             reason = "Okna";
         }
@@ -715,7 +715,7 @@ void controlLivingRoom() {
 
     if (millis() - lastCycleLog >= 300000) {
         const char* reason = "aktiven";
-        if (!(currentData.windowSensor1 && currentData.windowSensor2)) reason = "Okna";
+        if ((currentData.windowSensor1 || currentData.windowSensor2)) reason = "Okna";
         else if (currentData.disableLivingRoom) reason = "CYD";
         else if (isNND) reason = "NND";
         snprintf(logMessage, sizeof(logMessage), "[DS] Cikel %.1f%%, %s, DND:%s, NND:%s, Stopnja:%d",
@@ -724,7 +724,7 @@ void controlLivingRoom() {
         lastCycleLog = millis();
     }
 
-    if (!(currentData.windowSensor1 && currentData.windowSensor2) || currentData.disableLivingRoom) {
+    if ((currentData.windowSensor1 || currentData.windowSensor2) || currentData.disableLivingRoom) {
         if (fanActive) {
             digitalWrite(PIN_DNEVNI_VPIH, LOW);
             digitalWrite(PIN_DNEVNI_ODVOD_1, LOW);
@@ -738,7 +738,7 @@ void controlLivingRoom() {
             currentData.offTimes[4] = 0;
             currentData.offTimes[5] = 0;
             lastOffTime = millis();
-            const char* reason = (!(currentData.windowSensor1 && currentData.windowSensor2)) ? "Okna" : "CYD";
+            const char* reason = ((currentData.windowSensor1 || currentData.windowSensor2)) ? "Okna" : "CYD";
             snprintf(logMessage, sizeof(logMessage), "[DS Vent] OFF: Diss via %s", reason);
             logEvent(logMessage);
         }
@@ -773,7 +773,7 @@ void controlLivingRoom() {
         currentData.manualTriggerLivingRoom = false;
     }
 
-    if (manualTrigger && (currentData.windowSensor1 && currentData.windowSensor2)) {
+    if (manualTrigger && !(currentData.windowSensor1 || currentData.windowSensor2)) {
         if (fanActive) {
             snprintf(logMessage, sizeof(logMessage), "[DS Vent] OFF: Prekinitev z Man Trigg");
             logEvent(logMessage);

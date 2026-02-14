@@ -22,21 +22,17 @@ bool sendStatusUpdate() {
     DynamicJsonDocument doc(512);
 
     // Fans (0=off, 1=on, 9=disabled)
-    doc["fwc"] = currentData.wcFan ? (currentData.disableWc ? 9 : 1) : 0;  // fan wc
-    doc["fut"] = currentData.utilityFan ? (currentData.disableUtility ? 9 : 1) : 0;   // fan utility
-    doc["fkop"] = currentData.bathroomFan ? (currentData.disableBathroom ? 9 : 1) : 0; // fan bathroom
+    doc["fwc"] = currentData.disableWc ? 9 : (currentData.wcFan ? 1 : 0);  // fan wc
+    doc["fut"] = currentData.disableUtility ? 9 : (currentData.utilityFan ? 1 : 0);   // fan utility
+    doc["fkop"] = currentData.disableBathroom ? 9 : (currentData.bathroomFan ? 1 : 0); // fan bathroom
     // fdse: 0=off, 1=level1, 2=level2, 3=level3, 9=disabled
     if (currentData.disableLivingRoom) {
         doc["fdse"] = 9;  // disabled
     } else {
         doc["fdse"] = currentData.livingExhaustLevel;  // 0, 1, 2, ali 3
     }
-    doc["fdsi"] = currentData.commonIntake ? 1 : 0;  // fan living intake
-    doc["fliv"] = currentData.livingExhaustLevel > 0 ? 1 : 0;  // fan living
 
     // Inputs (digital states)
-    doc["ibt"] = currentData.bathroomButton;     // input bathroom button
-    doc["iut"] = currentData.utilitySwitch;      // input utility switch
     doc["il1"] = currentData.bathroomLight1;     // input bathroom light 1
     doc["il2"] = currentData.bathroomLight2;     // input bathroom light 2
     doc["iul"] = currentData.utilityLight;       // input utility light
@@ -48,9 +44,7 @@ bool sendStatusUpdate() {
     doc["twc"] = currentData.offTimes[2];        // time wc
     doc["tut"] = currentData.offTimes[1];        // time utility
     doc["tkop"] = currentData.offTimes[0];       // time bathroom
-    doc["tdse"] = currentData.offTimes[3];       // time living exhaust
-    doc["tdsi"] = currentData.offTimes[4];       // time living intake
-    doc["tliv"] = currentData.offTimes[5];       // time living
+    doc["tdse"] = currentData.offTimes[4];       // time living exhaust
 
     // Error flags (0=ok, 1=error)
     doc["ebm"] = currentData.errorFlags & ERR_BME280 ? 1 : 0;   // error bme280
@@ -86,7 +80,13 @@ bool sendStatusUpdate() {
     String jsonString;
     serializeJson(doc, jsonString);
 
-    LOG_DEBUG("HTTP", "Sending JSON: %s", jsonString.c_str());
+    // Structured logging for readability
+    LOG_INFO("HTTP", "S_U FAN: fwc=%d fut=%d fkop=%d fdse=%d", (int)doc["fwc"], (int)doc["fut"], (int)doc["fkop"], (int)doc["fdse"]);
+    LOG_INFO("HTTP", "S_U INPUT: il1=%d il2=%d iul=%d iwc=%d iwr=%d iwb=%d", (int)doc["il1"], (int)doc["il2"], (int)doc["iul"], (int)doc["iwc"], (int)doc["iwr"], (int)doc["iwb"]);
+    LOG_INFO("HTTP", "S_U OFFTIME: twc=%d tut=%d tkop=%d tdse=%d", (int)doc["twc"], (int)doc["tut"], (int)doc["tkop"], (int)doc["tdse"]);
+    LOG_INFO("HTTP", "S_U SENSOR: tbat=%.1f hbat=%.1f pbat=%.1f tutl=%.1f hutl=%.1f", (float)doc["tbat"], (float)doc["hbat"], (float)doc["pbat"], (float)doc["tutl"], (float)doc["hutl"]);
+    LOG_INFO("HTTP", "S_U ERR+EN: ebm=%d esht=%d epwr=%d edew=%d etms=%d pwr=%.1f eng=%.1f dlds=%d", (int)doc["ebm"], (int)doc["esht"], (int)doc["epwr"], (int)doc["edew"], (int)doc["etms"], (float)doc["pwr"], (float)doc["eng"], (int)doc["dlds"]);
+
     bool success = sendHttpPostWithRetry("REW", url.c_str(), jsonString, 2, false);
     if (success) {
         LOG_INFO("HTTP", "STATUS_UPDATE na REW: uspeh");
@@ -136,15 +136,11 @@ bool sendDewUpdate(const char* room) {
 // Check and send STATUS_UPDATE to REW when states change or periodically
 void checkAndSendStatusUpdate() {
     // Calculate current states for comparison
-    uint8_t currentFanWc = currentData.wcFan ? (currentData.disableWc ? 9 : 1) : 0;
-    uint8_t currentFanUt = currentData.utilityFan ? (currentData.disableUtility ? 9 : 1) : 0;
-    uint8_t currentFanKop = currentData.bathroomFan ? (currentData.disableBathroom ? 9 : 1) : 0;
+    uint8_t currentFanWc = currentData.disableWc ? 9 : (currentData.wcFan ? 1 : 0);
+    uint8_t currentFanUt = currentData.disableUtility ? 9 : (currentData.utilityFan ? 1 : 0);
+    uint8_t currentFanKop = currentData.disableBathroom ? 9 : (currentData.bathroomFan ? 1 : 0);
     uint8_t currentFanDse = currentData.disableLivingRoom ? 9 : currentData.livingExhaustLevel;
-    uint8_t currentFanDsi = currentData.commonIntake ? 1 : 0;
-    uint8_t currentFanLiv = currentData.livingExhaustLevel > 0 ? 1 : 0;
 
-    uint8_t currentInputBt = currentData.bathroomButton;
-    uint8_t currentInputUt = currentData.utilitySwitch;
     uint8_t currentInputL1 = currentData.bathroomLight1;
     uint8_t currentInputL2 = currentData.bathroomLight2;
     uint8_t currentInputUl = currentData.utilityLight;
@@ -153,14 +149,12 @@ void checkAndSendStatusUpdate() {
     uint8_t currentInputWb = currentData.windowSensor2;
 
     // Check if any state changed
-    static uint8_t lastFanWc = 255, lastFanUt = 255, lastFanKop = 255, lastFanDse = 255, lastFanDsi = 255, lastFanLiv = 255;
-    static uint8_t lastInputBt = 255, lastInputUt = 255, lastInputL1 = 255, lastInputL2 = 255;
+    static uint8_t lastFanWc = 255, lastFanUt = 255, lastFanKop = 255, lastFanDse = 255;
+    static uint8_t lastInputL1 = 255, lastInputL2 = 255;
     static uint8_t lastInputUl = 255, lastInputWc = 255, lastInputWr = 255, lastInputWb = 255;
 
     bool changed = (currentFanWc != lastFanWc) || (currentFanUt != lastFanUt) ||
                    (currentFanKop != lastFanKop) || (currentFanDse != lastFanDse) ||
-                   (currentFanDsi != lastFanDsi) || (currentFanLiv != lastFanLiv) ||
-                   (currentInputBt != lastInputBt) || (currentInputUt != lastInputUt) ||
                    (currentInputL1 != lastInputL1) || (currentInputL2 != lastInputL2) ||
                    (currentInputUl != lastInputUl) || (currentInputWc != lastInputWc) ||
                    (currentInputWr != lastInputWr) || (currentInputWb != lastInputWb);
@@ -211,10 +205,6 @@ void checkAndSendStatusUpdate() {
         lastFanUt = currentFanUt;
         lastFanKop = currentFanKop;
         lastFanDse = currentFanDse;
-        lastFanDsi = currentFanDsi;
-        lastFanLiv = currentFanLiv;
-        lastInputBt = currentInputBt;
-        lastInputUt = currentInputUt;
         lastInputL1 = currentInputL1;
         lastInputL2 = currentInputL2;
         lastInputUl = currentInputUl;
@@ -263,7 +253,7 @@ int sendHttpPost(const char* url, const String& jsonData, int timeoutMs) {
 
 // Helper function with retry logic
 bool sendHttpPostWithRetry(const char* deviceName, const char* url, const String& jsonData, int maxRetries, bool logResult) {
-    const int HTTP_TIMEOUT_MS = 5000; // 5 second timeout
+    const int HTTP_TIMEOUT_MS = 10000; // 10 second timeout
     int lastHttpCode = 0;
 
     for (int attempt = 1; attempt <= maxRetries; attempt++) {

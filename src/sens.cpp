@@ -458,8 +458,8 @@ void readInputs() {
     // Read all digital inputs at once and update currentData
     currentData.bathroomButton = digitalRead(PIN_KOPALNICA_TIPKA) == LOW;
     currentData.utilitySwitch = digitalRead(PIN_UTILITY_STIKALO) == LOW;
-    currentData.windowSensor1 = digitalRead(PIN_OKNO_SENZOR_1) == LOW;
-    currentData.windowSensor2 = digitalRead(PIN_OKNO_SENZOR_2) == LOW;
+    currentData.windowSensor1 = digitalRead(PIN_OKNO_SENZOR_1) == HIGH;  // true = odprto
+    currentData.windowSensor2 = digitalRead(PIN_OKNO_SENZOR_2) == HIGH;  // true = odprto
     currentData.bathroomLight1 = digitalRead(PIN_KOPALNICA_LUC_1) == LOW;
     currentData.bathroomLight2 = digitalRead(PIN_KOPALNICA_LUC_2) == LOW;
     currentData.utilityLight = digitalRead(PIN_UTILITY_LUC) == LOW;

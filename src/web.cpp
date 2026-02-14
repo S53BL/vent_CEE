@@ -37,7 +37,7 @@ String getLightStatus(bool light) {
 }
 
 String getWindowStatus() {
-    return (currentData.windowSensor1 && currentData.windowSensor2) ? "Odprta" : "Zaprta";
+    return (currentData.windowSensor1 || currentData.windowSensor2) ? "Odprta" : "Zaprta";
 }
 
 String getErrorDescription(uint8_t errorFlags) {
@@ -141,6 +141,13 @@ void handleManualControl(AsyncWebServerRequest *request, uint8_t *data, size_t l
             return;
         }
 
+        // Reactivate REW if it was offline
+        String clientIP = request->client()->remoteIP().toString();
+        if (clientIP == "192.168.2.190" && !rewStatus.isOnline) {
+            rewStatus.isOnline = true;
+            LOG_INFO("HTTP", "REW reaktiviran ob prejemu MANUAL_CONTROL od %s", clientIP.c_str());
+        }
+
         request->send(200, "application/json", "{\"status\":\"OK\"}");
     }
 }
@@ -190,6 +197,13 @@ void handleSensorData(AsyncWebServerRequest *request, uint8_t *data, size_t len,
 
         LOG_INFO("HTTP", "SENSOR_DATA: Received - Temp: %.1f°C, Hum: %.1f%%, CO2: %d, internal updated",
                  externalData.externalTemperature, externalData.externalHumidity, externalData.livingCO2);
+
+        // Reactivate REW if it was offline
+        String clientIP = request->client()->remoteIP().toString();
+        if (clientIP == "192.168.2.190" && !rewStatus.isOnline) {
+            rewStatus.isOnline = true;
+            LOG_INFO("HTTP", "REW reaktiviran ob prejemu SENSOR_DATA od %s", clientIP.c_str());
+        }
 
         request->send(200, "application/json", "{\"status\":\"OK\"}");
     }
@@ -1493,14 +1507,6 @@ void handleRoot(AsyncWebServerRequest *request) {
         <div class="card">
             <h2>WC</h2>
             <div class="status-item">
-                <span class="status-label">Temperatura:</span>
-                <span class="status-value" id="wc-temp">N/A</span>
-            </div>
-            <div class="status-item">
-                <span class="status-label">Vlaga:</span>
-                <span class="status-value" id="wc-humidity">N/A</span>
-            </div>
-            <div class="status-item">
                 <span class="status-label">Tlak:</span>
                 <span class="status-value" id="wc-pressure">)rawliteral" + String((int)currentData.bathroomPressure) + R"rawliteral( hPa</span>
             </div>
@@ -1528,6 +1534,10 @@ void handleRoot(AsyncWebServerRequest *request) {
             <div class="status-item">
                 <span class="status-label">Vlaga:</span>
                 <span class="status-value" id="kop-humidity">)rawliteral" + String(currentData.bathroomHumidity, 1) + R"rawliteral( %</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Tipka:</span>
+                <span class="status-value" id="kop-button">)rawliteral" + (currentData.bathroomButton ? "Pritisnjena" : "Nepritisnjena") + R"rawliteral(</span>
             </div>
             <div class="status-item">
                 <span class="status-label">Luč 1:</span>
@@ -1593,11 +1603,11 @@ void handleRoot(AsyncWebServerRequest *request) {
             </div>
             <div class="status-item">
                 <span class="status-label">Strešno okno:</span>
-                <span class="status-value" id="ds-window1">)rawliteral" + (currentData.windowSensor1 ? "Odprto" : "Zaprto") + R"rawliteral(</span>
+                <span class="status-value" id="ds-window1">)rawliteral" + (currentData.windowSensor2 ? "Odprto" : "Zaprto") + R"rawliteral(</span>
             </div>
             <div class="status-item">
                 <span class="status-label">Balkonska vrata:</span>
-                <span class="status-value" id="ds-window2">)rawliteral" + (currentData.windowSensor2 ? "Odprto" : "Zaprto") + R"rawliteral(</span>
+                <span class="status-value" id="ds-window2">)rawliteral" + (currentData.windowSensor1 ? "Odprto" : "Zaprto") + R"rawliteral(</span>
             </div>
             <div class="status-item">
                 <span class="status-label">Stopnja ventilatorja:</span>
@@ -1729,13 +1739,17 @@ void handleRoot(AsyncWebServerRequest *request) {
     </div>
 
     <script>
-        function updatePage() {
-            fetch('/current-data')
+        function updatePage(isAjax = false) {
+            const options = {};
+            if (isAjax) {
+                options.headers = { 'X-Requested-With': 'XMLHttpRequest' };
+            }
+            fetch('/current-data', options)
                 .then(response => response.json())
                 .then(data => {
                     // Update time display
-                    const timeDisplay = document.getElementById("timeDisplay");
-                    timeDisplay.textContent = `Trenutni čas: ${data.current_time} | DND: ${data.is_dnd ? "DA" : "NE"} | NND: ${data.is_nnd ? "DA" : "NE"}`;
+                    const dateDisplay = document.getElementById("dateDisplay");
+                    dateDisplay.textContent = data.current_time;
 
                     // Update WC data
                     document.getElementById("wc-pressure").textContent = data.bathroom_pressure + " hPa";
@@ -1746,6 +1760,7 @@ void handleRoot(AsyncWebServerRequest *request) {
                     // Update KOP data
                     document.getElementById("kop-temp").textContent = data.bathroom_temp + " °C";
                     document.getElementById("kop-humidity").textContent = data.bathroom_humidity + " %";
+                    document.getElementById("kop-button").textContent = data.bathroom_button ? "Pritisnjena" : "Nepritisnjena";
                     document.getElementById("kop-light1").textContent = data.bathroom_light1 ? "ON" : "OFF";
                     document.getElementById("kop-light2").textContent = data.bathroom_light2 ? "ON" : "OFF";
                     document.getElementById("kop-fan").textContent = data.bathroom_disabled ? "DISABLED" : (data.bathroom_fan ? "ON" : "OFF");
@@ -1763,8 +1778,8 @@ void handleRoot(AsyncWebServerRequest *request) {
                     document.getElementById("ds-temp").textContent = data.living_temp + " °C";
                     document.getElementById("ds-humidity").textContent = data.living_humidity + " %";
                     document.getElementById("ds-co2").textContent = data.living_co2 + " ppm";
-                    document.getElementById("ds-window1").textContent = data.living_window1 ? "Zaprto" : "Odprto";
-                    document.getElementById("ds-window2").textContent = data.living_window2 ? "Zaprto" : "Odprto";
+                    document.getElementById("ds-window1").textContent = data.living_window2 ? "Odprto" : "Zaprto";
+                    document.getElementById("ds-window2").textContent = data.living_window1 ? "Odprto" : "Zaprto";
                     document.getElementById("ds-fan-level").textContent = data.living_fan_level;
                     document.getElementById("ds-duty-cycle").textContent = data.living_duty_cycle + " %";
                     document.getElementById("ds-remaining").textContent = data.living_remaining + " s";
@@ -1809,7 +1824,7 @@ void handleRoot(AsyncWebServerRequest *request) {
             return errors;
         }
 
-        setInterval(updatePage, 10000);
+        setInterval(() => updatePage(true), 10000);
         updatePage(); // Initial update
     </script>
 </body>
@@ -2029,7 +2044,11 @@ void handleDataRequest(AsyncWebServerRequest *request) {
 }
 
 void handleCurrentDataRequest(AsyncWebServerRequest *request) {
-  LOG_DEBUG("Web", "Zahtevek: GET /current-data");
+  // Log only for initial page loads, not AJAX refreshes
+  if (!request->hasHeader("X-Requested-With") ||
+      request->getHeader("X-Requested-With")->value() != "XMLHttpRequest") {
+    LOG_DEBUG("Web", "Zahtevek: GET /current-data");
+  }
 
   float ramPercent = (ESP.getHeapSize() - ESP.getFreeHeap()) * 100.0 / ESP.getHeapSize();
   String uptimeStr = formatUptime(millis() / 1000);
@@ -2040,6 +2059,7 @@ void handleCurrentDataRequest(AsyncWebServerRequest *request) {
                 String("\"is_nnd\":") + String(isNNDTime() ? "true" : "false") + "," +
                 String("\"bathroom_temp\":") + String(currentData.bathroomTemp, 1) + "," +
                 String("\"bathroom_humidity\":") + String(currentData.bathroomHumidity, 1) + "," +
+                String("\"bathroom_button\":") + String(currentData.bathroomButton ? "true" : "false") + "," +
                 String("\"bathroom_pressure\":") + String((int)currentData.bathroomPressure) + "," +
                 String("\"bathroom_light1\":") + String(currentData.bathroomLight1 ? "true" : "false") + "," +
                 String("\"bathroom_light2\":") + String(currentData.bathroomLight2 ? "true" : "false") + "," +
