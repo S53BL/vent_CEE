@@ -379,6 +379,22 @@ const char* HTML_SETTINGS = R"rawliteral(
             width: 120px;
             cursor: pointer;
         }
+        .message {
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            font-weight: bold;
+        }
+        .message.success {
+            background: #44ff44;
+            color: #101010;
+            border: 1px solid #22dd22;
+        }
+        .message.error {
+            background: #ff4444;
+            color: white;
+            border: 1px solid #dd2222;
+        }
         .error {
             color: #ff6b6b;
             text-align: center;
@@ -523,7 +539,10 @@ const char* HTML_SETTINGS = R"rawliteral(
     </div>
     <div class="main-content">
         <h1>Ventilacijski sistem - Nastavitve</h1>
-        <div class="form-container">
+
+    <div id="message" class="message" style="display: none;"></div>
+
+    <div class="form-container">
             <form id="settingsForm">
                 <div class="form-group">
                     <label for="humThreshold">Meja vlage Kopalnica/Utility</label>
@@ -671,7 +690,7 @@ const char* HTML_SETTINGS = R"rawliteral(
     <div class="right-sidebar">
         <h2>Akcije</h2>
         <button type="button" class="action-button save-button" onclick="saveSettings()">Shrani</button>
-        <button type="button" class="action-button reset-button" onclick="resetSettings()">Razveljavi spremembe</button>
+        <button type="button" class="action-button reset-button" onclick="resetToDefaults()">Ponastavi</button>
     </div>
     <div id="Help" class="tabcontent">
         <div class="form-container">
@@ -784,14 +803,10 @@ const char* HTML_SETTINGS = R"rawliteral(
 
         let updateInterval;
 
-        function updateSettings() {
+        function loadCurrentSettings() {
             fetch("/data")
                 .then(response => response.json())
                 .then(data => {
-                    // Update time display
-                    const timeDisplay = document.getElementById("timeDisplay");
-                    timeDisplay.textContent = `Trenutni čas: ${data.CURRENT_TIME} | DND: ${data.IS_DND} | NND: ${data.IS_NND}`;
-
                     document.getElementById("humThreshold").value = data.HUM_THRESHOLD;
                     document.getElementById("fanDuration").value = data.FAN_DURATION;
                     document.getElementById("fanOffDuration").value = data.FAN_OFF_DURATION;
@@ -815,11 +830,15 @@ const char* HTML_SETTINGS = R"rawliteral(
                     document.getElementById("tempExtremeHighDS").value = data.TEMP_EXTREME_HIGH_DS;
                     document.getElementById("tempExtremeLowDS").value = data.TEMP_EXTREME_LOW_DS;
                 })
-                .catch(error => console.error('Napaka pri pridobivanju nastavitev:', error));
+                .catch(error => console.error('Napaka pri nalaganju nastavitev:', error));
+        }
+
+        function updateSettings() {
+            loadCurrentSettings();
         }
 
         function saveSettings() {
-            var formData = new FormData();
+            const formData = new FormData();
             formData.append('humThreshold', document.getElementById('humThreshold').value);
             formData.append('fanDuration', document.getElementById('fanDuration').value);
             formData.append('fanOffDuration', document.getElementById('fanOffDuration').value);
@@ -843,29 +862,30 @@ const char* HTML_SETTINGS = R"rawliteral(
             formData.append('tempExtremeHighDS', document.getElementById('tempExtremeHighDS').value);
             formData.append('tempExtremeLowDS', document.getElementById('tempExtremeLowDS').value);
 
-            // Clear previous messages and show loading state
-            clearMessages();
-            showLoadingState(true);
+            const data = {};
+            for (let [key, value] of formData.entries()) {
+                data[key] = value;
+            }
 
-            fetch("/settings/update", { method: "POST", body: formData })
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error("Napaka pri shranjevanju: " + response.statusText);
-                    }
-                    return response.text();
-                })
-                .then(data => {
-                    showLoadingState(false);
-                    if (data !== "Nastavitve shranjene!") {
-                        showErrorMessage(data);
-                        return;
-                    }
-                    showSuccessMessage(data);
-                })
-                .catch(error => {
-                    showLoadingState(false);
-                    showErrorMessage(error.message);
-                });
+            fetch('/settings/update', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: new URLSearchParams(data)
+            })
+            .then(response => response.text())
+            .then(result => {
+                if (result === "Nastavitve shranjene!") {
+                    showMessage(result, 'success');
+                    loadCurrentSettings(); // Reload current values
+                } else {
+                    showMessage(result, 'error');
+                }
+            })
+            .catch(error => {
+                showMessage('Napaka pri shranjevanju: ' + error, 'error');
+            });
         }
 
         function clearMessages() {
@@ -918,11 +938,38 @@ const char* HTML_SETTINGS = R"rawliteral(
             }
         }
 
-        function resetSettings() {
-            updateSettings();
+        function showMessage(text, type) {
+            const messageDiv = document.getElementById('message');
+            messageDiv.textContent = text;
+            messageDiv.className = 'message ' + type;
+            messageDiv.style.display = 'block';
+
+            // Auto-hide after 5 seconds
+            setTimeout(() => {
+                messageDiv.style.display = 'none';
+            }, 5000);
+        }
+
+        function resetToDefaults() {
+            fetch('/settings/reset', {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    showMessage(result.message, 'success');
+                    updateSettings(); // Reload current values
+                } else {
+                    showMessage(result.error || 'Napaka pri ponastavitvi', 'error');
+                }
+            })
+            .catch(error => {
+                showMessage('Napaka pri ponastavitvi: ' + error, 'error');
+            });
         }
 
         updateInterval = setInterval(updateSettings, 10000);
+        loadCurrentSettings();
         updateSettings();
 
         // Ustavljanje updateInterval ob fokusiranju na inpute in select elemente
@@ -1197,30 +1244,6 @@ const char* HTML_SETTINGS_SENSOR_OFFSETS = R"rawliteral(
 
     <div id="message" class="message" style="display: none;"></div>
 
-    <div class="current-values">
-        <h3>Trenutne nastavitve</h3>
-        <div class="value-item">
-            <span>Offset temperature BME280 (°C):</span>
-            <span id="currentBmeTempOffset">0.0</span>
-        </div>
-        <div class="value-item">
-            <span>Offset vlažnosti BME280 (%):</span>
-            <span id="currentBmeHumidityOffset">0.0</span>
-        </div>
-        <div class="value-item">
-            <span>Offset tlaka BME280 (hPa):</span>
-            <span id="currentBmePressureOffset">0.0</span>
-        </div>
-        <div class="value-item">
-            <span>Offset temperature SHT41 (°C):</span>
-            <span id="currentShtTempOffset">0.0</span>
-        </div>
-        <div class="value-item">
-            <span>Offset vlažnosti SHT41 (%):</span>
-            <span id="currentShtHumidityOffset">0.0</span>
-        </div>
-    </div>
-
     <form class="settings-form" id="settingsForm">
         <div class="form-group">
             <label for="bmeTempOffset">Offset temperature BME280 (°C)</label>
@@ -1252,19 +1275,42 @@ const char* HTML_SETTINGS_SENSOR_OFFSETS = R"rawliteral(
             <div class="description">Prilagoditev vlažnosti SHT41 senzorja (-20.0 do +20.0 %)</div>
         </div>
 
-        <div class="buttons">
-            <button type="submit" class="btn btn-primary">Shrani nastavitve</button>
-            <button type="button" class="btn btn-secondary" onclick="resetToDefaults()">Ponastavi na privzete</button>
-        </div>
+
     </form>
 
     <div class="right-sidebar">
         <h2>Akcije</h2>
-        <button type="button" class="action-button save-button" onclick="document.getElementById('settingsForm').dispatchEvent(new Event('submit'))">Shrani nastavitve</button>
-        <button type="button" class="action-button reset-button" onclick="resetToDefaults()">Ponastavi na privzete</button>
+        <button type="button" class="action-button save-button" onclick="saveSettings()">Shrani</button>
+        <button type="button" class="action-button reset-button" onclick="resetToDefaults()">Ponastavi</button>
     </div>
 
     <script>
+        function saveSettings() {
+            var formData = new FormData();
+            formData.append('bmeTempOffset', document.getElementById('bmeTempOffset').value);
+            formData.append('bmeHumidityOffset', document.getElementById('bmeHumidityOffset').value);
+            formData.append('bmePressureOffset', document.getElementById('bmePressureOffset').value);
+            formData.append('shtTempOffset', document.getElementById('shtTempOffset').value);
+            formData.append('shtHumidityOffset', document.getElementById('shtHumidityOffset').value);
+
+            fetch('/api/sensor-offsets', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    showMessage(result.message, 'success');
+                    loadCurrentSettings(); // Reload current values
+                } else {
+                    showMessage(result.error || 'Napaka pri shranjevanju', 'error');
+                }
+            })
+            .catch(error => {
+                showMessage('Napaka pri shranjevanju: ' + error, 'error');
+            });
+        }
+
         // Load current settings on page load
         loadCurrentSettings();
 
@@ -1272,12 +1318,6 @@ const char* HTML_SETTINGS_SENSOR_OFFSETS = R"rawliteral(
             fetch('/api/sensor-offsets')
                 .then(response => response.json())
                 .then(data => {
-                    document.getElementById('currentBmeTempOffset').textContent = data.bmeTempOffset.toFixed(1);
-                    document.getElementById('currentBmeHumidityOffset').textContent = data.bmeHumidityOffset.toFixed(1);
-                    document.getElementById('currentBmePressureOffset').textContent = data.bmePressureOffset.toFixed(1);
-                    document.getElementById('currentShtTempOffset').textContent = data.shtTempOffset.toFixed(1);
-                    document.getElementById('currentShtHumidityOffset').textContent = data.shtHumidityOffset.toFixed(1);
-
                     document.getElementById('bmeTempOffset').value = data.bmeTempOffset;
                     document.getElementById('bmeHumidityOffset').value = data.bmeHumidityOffset;
                     document.getElementById('bmePressureOffset').value = data.bmePressureOffset;
@@ -1333,11 +1373,7 @@ const char* HTML_SETTINGS_SENSOR_OFFSETS = R"rawliteral(
         });
 
         function resetToDefaults() {
-            if (!confirm('Ali res želite ponastaviti vse nastavitve na privzete vrednosti?')) {
-                return;
-            }
-
-            fetch('/api/sensor-offsets/reset', {
+            fetch('/api/sensor-offsets-reset', {
                 method: 'POST'
             })
             .then(response => response.json())
@@ -2008,38 +2044,76 @@ void handleSettings(AsyncWebServerRequest *request) {
 void handleDataRequest(AsyncWebServerRequest *request) {
   LOG_DEBUG("Web", "Zahtevek: GET /data");
 
-  // Breme direktno iz NVS
-  Preferences prefs;
-  prefs.begin("vent", true);
+  // Create a temporary settings struct to read from NVS
+  Settings tempSettings;
 
+  // Read from NVS using the same method as loadSettings()
+  Preferences prefs;
+  prefs.begin("settings", true);
+
+  // Check marker for data validation
+  uint8_t marker = prefs.getUChar("marker", 0x00);
+  bool dataValid = (marker == SETTINGS_MARKER);
+
+  if (dataValid) {
+    // Read settings as blob
+    size_t bytesRead = prefs.getBytes("settings", (uint8_t*)&tempSettings, sizeof(Settings));
+    uint16_t stored_crc = prefs.getUShort("settings_crc", 0);
+
+    if (bytesRead == sizeof(Settings)) {
+      // Calculate CRC
+      uint16_t calculated_crc = calculateCRC((const uint8_t*)&tempSettings, sizeof(Settings));
+
+      if (calculated_crc == stored_crc) {
+        LOG_DEBUG("Web", "Settings uspešno prebrane iz NVS (CRC: 0x%04X)", calculated_crc);
+      } else {
+        LOG_WARN("Web", "CRC neustreza za /data (izračunan: 0x%04X, shranjen: 0x%04X) - uporabljene privzete vrednosti", calculated_crc, stored_crc);
+        dataValid = false;
+      }
+    } else {
+      LOG_WARN("Web", "Neveljavna velikost podatkov za /data (%d != %d)", bytesRead, sizeof(Settings));
+      dataValid = false;
+    }
+  } else {
+    LOG_DEBUG("Web", "Marker neveljaven za /data - uporabljene privzete vrednosti");
+  }
+
+  prefs.end();
+
+  // Use default values if data is invalid
+  if (!dataValid) {
+    initDefaults();
+    tempSettings = settings;  // Use the global defaults
+  }
+
+  // Build JSON response using the tempSettings struct
   String json = "{" +
                 String("\"CURRENT_TIME\":\"") + String(myTZ.dateTime().c_str()) + "\"," +
                 String("\"IS_DND\":") + String(isDNDTime() ? "1" : "0") + "," +
                 String("\"IS_NND\":") + String(isNNDTime() ? "1" : "0") + "," +
-                String("\"HUM_THRESHOLD\":\"") + String((int)prefs.getFloat("humThreshold", 60.0f)) + "\"," +
-                String("\"FAN_DURATION\":\"") + String(prefs.getUInt("fanDuration", 180)) + "\"," +
-                String("\"FAN_OFF_DURATION\":\"") + String(prefs.getUInt("fanOffDuration", 1200)) + "\"," +
-                String("\"FAN_OFF_DURATION_KOP\":\"") + String(prefs.getUInt("fanOffDurationKop", 1200)) + "\"," +
-                String("\"TEMP_LOW_THRESHOLD\":\"") + String((int)prefs.getFloat("tempLowThreshold", 5.0f)) + "\"," +
-                String("\"TEMP_MIN_THRESHOLD\":\"") + String((int)prefs.getFloat("tempMinThreshold", -10.0f)) + "\"," +
-                String("\"DND_ALLOW_AUTOMATIC\":") + String(prefs.getUChar("dndAllowableAutomatic", 0) != 0 ? "1" : "0") + "," +
-                String("\"DND_ALLOW_SEMIAUTOMATIC\":") + String(prefs.getUChar("dndAllowableSemiautomatic", 0) != 0 ? "1" : "0") + "," +
-                String("\"DND_ALLOW_MANUAL\":") + String(prefs.getUChar("dndAllowableManual", 1) != 0 ? "1" : "0") + "," +
-                String("\"CYCLE_DURATION_DS\":\"") + String(prefs.getUInt("cycleDurationDS", 60)) + "\"," +
-                String("\"CYCLE_ACTIVE_PERCENT_DS\":\"") + String((int)prefs.getFloat("cycleActivePercentDS", 30.0f)) + "\"," +
-                String("\"HUM_THRESHOLD_DS\":\"") + String((int)prefs.getFloat("humThresholdDS", 60.0f)) + "\"," +
-                String("\"HUM_THRESHOLD_HIGH_DS\":\"") + String((int)prefs.getFloat("humThresholdHighDS", 70.0f)) + "\"," +
-                String("\"HUM_EXTREME_HIGH_DS\":\"") + String((int)prefs.getFloat("humExtremeHighDS", 80.0f)) + "\"," +
-                String("\"CO2_THRESHOLD_LOW_DS\":\"") + String(prefs.getUInt("co2ThresholdLowDS", 900)) + "\"," +
-                String("\"CO2_THRESHOLD_HIGH_DS\":\"") + String(prefs.getUInt("co2ThresholdHighDS", 1200)) + "\"," +
-                String("\"INCREMENT_PERCENT_LOW_DS\":\"") + String((int)prefs.getFloat("incrementPercentLowDS", 15.0f)) + "\"," +
-                String("\"INCREMENT_PERCENT_HIGH_DS\":\"") + String((int)prefs.getFloat("incrementPercentHighDS", 50.0f)) + "\"," +
-                String("\"INCREMENT_PERCENT_TEMP_DS\":\"") + String((int)prefs.getFloat("incrementPercentTempDS", 20.0f)) + "\"," +
-                String("\"TEMP_IDEAL_DS\":\"") + String((int)prefs.getFloat("tempIdealDS", 24.0f)) + "\"," +
-                String("\"TEMP_EXTREME_HIGH_DS\":\"") + String((int)prefs.getFloat("tempExtremeHighDS", 30.0f)) + "\"," +
-                String("\"TEMP_EXTREME_LOW_DS\":\"") + String((int)prefs.getFloat("tempExtremeLowDS", -10.0f)) + "\"}";
+                String("\"HUM_THRESHOLD\":\"") + String((int)tempSettings.humThreshold) + "\"," +
+                String("\"FAN_DURATION\":\"") + String(tempSettings.fanDuration) + "\"," +
+                String("\"FAN_OFF_DURATION\":\"") + String(tempSettings.fanOffDuration) + "\"," +
+                String("\"FAN_OFF_DURATION_KOP\":\"") + String(tempSettings.fanOffDurationKop) + "\"," +
+                String("\"TEMP_LOW_THRESHOLD\":\"") + String((int)tempSettings.tempLowThreshold) + "\"," +
+                String("\"TEMP_MIN_THRESHOLD\":\"") + String((int)tempSettings.tempMinThreshold) + "\"," +
+                String("\"DND_ALLOW_AUTOMATIC\":") + String(tempSettings.dndAllowableAutomatic ? "1" : "0") + "," +
+                String("\"DND_ALLOW_SEMIAUTOMATIC\":") + String(tempSettings.dndAllowableSemiautomatic ? "1" : "0") + "," +
+                String("\"DND_ALLOW_MANUAL\":") + String(tempSettings.dndAllowableManual ? "1" : "0") + "," +
+                String("\"CYCLE_DURATION_DS\":\"") + String(tempSettings.cycleDurationDS) + "\"," +
+                String("\"CYCLE_ACTIVE_PERCENT_DS\":\"") + String((int)tempSettings.cycleActivePercentDS) + "\"," +
+                String("\"HUM_THRESHOLD_DS\":\"") + String((int)tempSettings.humThresholdDS) + "\"," +
+                String("\"HUM_THRESHOLD_HIGH_DS\":\"") + String((int)tempSettings.humThresholdHighDS) + "\"," +
+                String("\"HUM_EXTREME_HIGH_DS\":\"") + String((int)tempSettings.humExtremeHighDS) + "\"," +
+                String("\"CO2_THRESHOLD_LOW_DS\":\"") + String(tempSettings.co2ThresholdLowDS) + "\"," +
+                String("\"CO2_THRESHOLD_HIGH_DS\":\"") + String(tempSettings.co2ThresholdHighDS) + "\"," +
+                String("\"INCREMENT_PERCENT_LOW_DS\":\"") + String((int)tempSettings.incrementPercentLowDS) + "\"," +
+                String("\"INCREMENT_PERCENT_HIGH_DS\":\"") + String((int)tempSettings.incrementPercentHighDS) + "\"," +
+                String("\"INCREMENT_PERCENT_TEMP_DS\":\"") + String((int)tempSettings.incrementPercentTempDS) + "\"," +
+                String("\"TEMP_IDEAL_DS\":\"") + String((int)tempSettings.tempIdealDS) + "\"," +
+                String("\"TEMP_EXTREME_HIGH_DS\":\"") + String((int)tempSettings.tempExtremeHighDS) + "\"," +
+                String("\"TEMP_EXTREME_LOW_DS\":\"") + String((int)tempSettings.tempExtremeLowDS) + "\"}" ;
 
-  prefs.end();
   request->send(200, "application/json", json);
 }
 
@@ -2212,15 +2286,18 @@ void handlePostSettings(AsyncWebServerRequest *request) {
 
 void handleResetSettings(AsyncWebServerRequest *request) {
   LOG_DEBUG("Web", "Zahtevek: POST /settings/reset");
-  initDefaults();
-  saveSettings();
 
-  LOG_INFO("Web", "Privzete nastavitve obnovljene");
+  LOG_INFO("Web", "Nastavitve ponovno naložene iz NVS");
   settingsUpdateSuccess = true;
-  settingsUpdateMessage = "Privzete nastavitve obnovljene!";
+  settingsUpdateMessage = "Nastavitve ponovno naložene!";
   settingsUpdatePending = false;
 
-  request->send(200, "text/plain", "Privzete nastavitve obnovljene!");
+  DynamicJsonDocument doc(256);
+  doc["success"] = true;
+  doc["message"] = "Nastavitve ponovno naložene!";
+  String response;
+  serializeJson(doc, response);
+  request->send(200, "application/json", response);
 }
 
 void handleSettingsStatus(AsyncWebServerRequest *request) {
@@ -2332,30 +2409,25 @@ void handlePostSensorOffsets(AsyncWebServerRequest *request) {
 }
 
 void handleResetSensorOffsets(AsyncWebServerRequest *request) {
-  LOG_DEBUG("Web", "Zahtevek: POST /api/sensor-offsets/reset");
+    LOG_DEBUG("Web", "Zahtevek: POST /api/sensor-offsets/reset");
 
-  // Reset to defaults
-  settings.bmeTempOffset = 0.0f;
-  settings.bmeHumidityOffset = 0.0f;
-  settings.bmePressureOffset = 0.0f;
-  settings.shtTempOffset = 0.0f;
-  settings.shtHumidityOffset = 0.0f;
-  saveSettings();
+    // Just return current settings from NVS (already loaded in settings struct)
+    // Do NOT change anything!
 
-  LOG_INFO("Web", "Sensor offseti resetirani na privzete vrednosti");
+    LOG_INFO("Web", "Sensor offseti ponovno naloženi iz NVS");
 
-  DynamicJsonDocument doc(256);
-  doc["success"] = true;
-  doc["message"] = "Nastavitve senzorjev resetirane na privzete vrednosti";
-  doc["bmeTempOffset"] = settings.bmeTempOffset;
-  doc["bmeHumidityOffset"] = settings.bmeHumidityOffset;
-  doc["bmePressureOffset"] = settings.bmePressureOffset;
-  doc["shtTempOffset"] = settings.shtTempOffset;
-  doc["shtHumidityOffset"] = settings.shtHumidityOffset;
+    DynamicJsonDocument doc(256);
+    doc["success"] = true;
+    doc["message"] = "Nastavitve senzorjev ponovno naložene";
+    doc["bmeTempOffset"] = settings.bmeTempOffset;
+    doc["bmeHumidityOffset"] = settings.bmeHumidityOffset;
+    doc["bmePressureOffset"] = settings.bmePressureOffset;
+    doc["shtTempOffset"] = settings.shtTempOffset;
+    doc["shtHumidityOffset"] = settings.shtHumidityOffset;
 
-  String response;
-  serializeJson(doc, response);
-  request->send(200, "application/json", response);
+    String response;
+    serializeJson(doc, response);
+    request->send(200, "application/json", response);
 }
 
 void setupWebServer() {
@@ -2374,9 +2446,9 @@ void setupWebServer() {
   server.on("/settings/status", HTTP_GET, handleSettingsStatus);
 
   // Sensor offsets API endpoints
+  server.on("/api/sensor-offsets-reset", HTTP_POST, handleResetSensorOffsets);
   server.on("/api/sensor-offsets", HTTP_GET, handleGetSensorOffsets);
   server.on("/api/sensor-offsets", HTTP_POST, handlePostSensorOffsets);
-  server.on("/api/sensor-offsets/reset", HTTP_POST, handleResetSensorOffsets);
 
   // Status endpoint
   server.on("/status", HTTP_GET, [](AsyncWebServerRequest *request) {
