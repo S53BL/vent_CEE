@@ -329,7 +329,6 @@ void controlBathroom() {
     static bool lastButtonState = false;
     static bool lastLightState1 = false;
     static bool lastLightState2 = false;
-    static bool lastLightOn = lastLightState1 || lastLightState2;
     static bool isLongPress = false;
     static unsigned long lastSensorCheck = 0;
 
@@ -389,7 +388,6 @@ void controlBathroom() {
         lastButtonState = currentButtonState;
         lastLightState1 = currentLightState1;
         lastLightState2 = currentLightState2;
-        lastLightOn = currentLightOn;
         return;
     }
 
@@ -451,7 +449,6 @@ void controlBathroom() {
         lastButtonState = currentButtonState;
         lastLightState1 = currentLightState1;
         lastLightState2 = currentLightState2;
-        lastLightOn = currentLightOn;
         return;
     }
 
@@ -460,7 +457,7 @@ void controlBathroom() {
     bool reducedConditions = currentData.externalTemp < settings.tempLowThreshold;
 
     bool manualTriggerREW = currentData.manualTriggerBathroom && (!isDNDTime() || settings.dndAllowableManual);
-    bool semiAutomaticTrigger = lastLightOn && !currentLightOn && (!isDNDTime() || settings.dndAllowableSemiautomatic);
+    bool semiAutomaticTrigger = (lastLightState1 || lastLightState2) && !currentLightState1 && !currentLightState2 && (!isDNDTime() || settings.dndAllowableSemiautomatic);
     bool automaticTrigger = currentData.bathroomHumidity >= settings.humThreshold &&
                            (!isDNDTime() || settings.dndAllowableAutomatic) &&
                            (millis() - lastOffTime >= settings.fanOffDuration / 2 * 1000 || !fanActive) &&
@@ -548,7 +545,6 @@ void controlBathroom() {
     lastButtonState = currentButtonState;
     lastLightState1 = currentLightState1;
     lastLightState2 = currentLightState2;
-    lastLightOn = currentLightOn;
 }
 
 void controlLivingRoom() {
@@ -568,26 +564,31 @@ void controlLivingRoom() {
         isInitialized = true;
     }
 
-    // Če ni NTP sinhronizacije - samo lokalni triggerji delujejo
-    if (!timeSynced) {
-        // Handle manual triggers only
-        if (currentData.manualTriggerLivingRoom) {
+    // Unified manual trigger handling
+    if (currentData.manualTriggerLivingRoom) {
+        bool canActivate = true;
+        const char* reason = "OK";
+
+        if (currentData.disableLivingRoom) {
+            canActivate = false;
+            reason = "Living room disabled";
+        } else if (currentData.windowSensor1 || currentData.windowSensor2) {
+            canActivate = false;
+            reason = "Windows open";
+        } else if (timeSynced && isDNDTime() && !settings.dndAllowableManual) {
+            canActivate = false;
+            reason = "DND time active";
+        }
+
+        if (canActivate) {
+            // Stop any current fan
             if (fanActive) {
                 digitalWrite(PIN_DNEVNI_VPIH, LOW);
                 digitalWrite(PIN_DNEVNI_ODVOD_1, LOW);
                 digitalWrite(PIN_DNEVNI_ODVOD_2, LOW);
                 digitalWrite(PIN_DNEVNI_ODVOD_3, LOW);
-                fanActive = false;
-                currentLevel = 0;
-                manualMode = false;
-                currentData.livingIntake = false;
-                currentData.livingExhaustLevel = 0;
-                currentData.offTimes[4] = 0;
-                currentData.offTimes[5] = 0;
-                lastOffTime = millis();
-                snprintf(logMessage, sizeof(logMessage), "[DS Vent] OFF: Prekinitev z Man Trigg");
-                logEvent(logMessage);
             }
+            // Start manual mode
             digitalWrite(PIN_DNEVNI_VPIH, HIGH);
             digitalWrite(PIN_DNEVNI_ODVOD_2, HIGH);
             fanActive = true;
@@ -597,11 +598,28 @@ void controlLivingRoom() {
             currentData.livingIntake = true;
             currentData.livingExhaustLevel = 2;
             unsigned long duration = settings.fanDuration * 2 * 1000;
-            currentData.manualTriggerLivingRoom = false;
-            snprintf(logMessage, sizeof(logMessage), "[DS Vent] ON: Man Trigg via CYD, Trajanje: %u s", duration / 1000);
-            logEvent(logMessage);
+            if (timeSynced) {
+                currentData.offTimes[4] = myTZ.now() + duration / 1000;
+                currentData.offTimes[5] = currentData.offTimes[4];
+                time_t offTime = currentData.offTimes[4];
+                struct tm* tm = localtime(&offTime);
+                char offTimeStr[20];
+                strftime(offTimeStr, sizeof(offTimeStr), "%Y-%m-%d %H:%M:%S", tm);
+                LOG_INFO("DS Vent", "ON: Man Trigg via CYD, Trajanje: %u s, Izklop ob: %s", duration / 1000, offTimeStr);
+            } else {
+                currentData.offTimes[4] = 0;
+                currentData.offTimes[5] = 0;
+                LOG_INFO("DS Vent", "ON: Man Trigg via CYD, Trajanje: %u s", duration / 1000);
+            }
+        } else {
+            LOG_INFO("DS Vent", "Manual trigger ignored - %s", reason);
         }
 
+        currentData.manualTriggerLivingRoom = false;
+    }
+
+    // Če ni NTP sinhronizacije - samo lokalni triggerji delujejo
+    if (!timeSynced) {
         // Handle timeout for active fans
         if (fanActive && manualMode && (millis() - fanStartTime >= settings.fanDuration * 2 * 1000)) {
             digitalWrite(PIN_DNEVNI_VPIH, LOW);
@@ -697,11 +715,11 @@ void controlLivingRoom() {
 
     if (millis() - lastCycleLog >= 300000) {
         const char* reason = "aktiven";
-        if ((currentData.windowSensor1 || currentData.windowSensor2)) reason = "Okna";
+        if ((currentData.windowSensor1 || currentData.windowSensor2)) reason = "Okna odprta";
         else if (currentData.disableLivingRoom) reason = "CYD";
         else if (isNND) reason = "NND";
         snprintf(logMessage, sizeof(logMessage), "[DS] Cikel %.1f%%, %s, DND:%s, NND:%s, Stopnja:%d",
-                 cyclePercent, reason, isDND ? "V" : "Zunaj", isNND ? "V" : "Zunaj", currentLevel);
+                 cyclePercent, reason, isDND ? "DA" : "NE", isNND ? "DA" : "NE", currentLevel);
         logEvent(logMessage);
         lastCycleLog = millis();
     }
@@ -738,51 +756,7 @@ void controlLivingRoom() {
         lastAdverseLogged = false;
     }
 
-    // Check for ignored manual triggers due to disabled state
-    if (currentData.disableLivingRoom && currentData.manualTriggerLivingRoom) {
-        snprintf(logMessage, sizeof(logMessage), "[DS Vent] Manual trigger ignored - living room disabled");
-        logEvent(logMessage);
-        currentData.manualTriggerLivingRoom = false;
-    }
 
-    bool manualTrigger = currentData.manualTriggerLivingRoom && (!isDNDTime() || settings.dndAllowableManual);
-
-    // Check for ignored manual triggers due to DND restrictions
-    if (currentData.manualTriggerLivingRoom && !manualTrigger) {
-        char logMessage[256];
-        snprintf(logMessage, sizeof(logMessage), "[DS Vent] Manual trigger ignored - DND dovoli ročno upravljanje = Disabled");
-        logEvent(logMessage);
-        currentData.manualTriggerLivingRoom = false;
-    }
-
-    if (manualTrigger && !(currentData.windowSensor1 || currentData.windowSensor2)) {
-        if (fanActive) {
-            snprintf(logMessage, sizeof(logMessage), "[DS Vent] OFF: Prekinitev z Man Trigg");
-            logEvent(logMessage);
-            digitalWrite(PIN_DNEVNI_VPIH, LOW);
-            digitalWrite(PIN_DNEVNI_ODVOD_1, LOW);
-            digitalWrite(PIN_DNEVNI_ODVOD_2, LOW);
-            digitalWrite(PIN_DNEVNI_ODVOD_3, LOW);
-        }
-        digitalWrite(PIN_DNEVNI_VPIH, HIGH);
-        digitalWrite(PIN_DNEVNI_ODVOD_2, HIGH);
-        fanActive = true;
-        manualMode = true;
-        fanStartTime = millis();
-        currentLevel = 2;
-        currentData.livingIntake = true;
-        currentData.livingExhaustLevel = 2;
-        unsigned long duration = settings.fanDuration * 2 * 1000;
-        currentData.offTimes[4] = myTZ.now() + duration / 1000;
-        currentData.offTimes[5] = currentData.offTimes[4];
-        time_t offTime = currentData.offTimes[4];
-        struct tm* tm = localtime(&offTime);
-        char offTimeStr[20];
-        strftime(offTimeStr, sizeof(offTimeStr), "%Y-%m-%d %H:%M:%S", tm);
-        currentData.manualTriggerLivingRoom = false;
-        snprintf(logMessage, sizeof(logMessage), "[DS Vent] ON: Man Trigg via CYD, Trajanje: %u s, Izklop ob: %s", duration / 1000, offTimeStr);
-        logEvent(logMessage);
-    }
 
     if (fanActive && manualMode) {
         if (millis() - fanStartTime >= settings.fanDuration * 2 * 1000) {
@@ -848,7 +822,16 @@ void controlLivingRoom() {
         struct tm* tm = localtime(&offTime);
         char offTimeStr[20];
         strftime(offTimeStr, sizeof(offTimeStr), "%Y-%m-%d %H:%M:%S", tm);
-        const char* reason = highIncrement ? "H_DS=%.1f%%>humThresholdHighDS=%.1f%%" : "Auto cikel";
+        char reason[64];
+        if (highIncrement) {
+            if (currentData.livingHumidity >= settings.humThresholdHighDS) {
+                snprintf(reason, sizeof(reason), "H_DS=%.1f%%>humThresholdHighDS=%.1f%%", currentData.livingHumidity, settings.humThresholdHighDS);
+            } else {
+                snprintf(reason, sizeof(reason), "CO2=%.0f>co2ThresholdHighDS=%.0f", currentData.livingCO2, settings.co2ThresholdHighDS);
+            }
+        } else {
+            strcpy(reason, "Auto cikel");
+        }
         snprintf(logMessage, sizeof(logMessage), "[DS Vent] ON: %s, Stopnja %d, Trajanje: %u s, Izklop ob: %s", reason, newLevel, duration / 1000, offTimeStr);
         logEvent(logMessage);
     } else if (fanActive && millis() - fanStartTime >= activeDurationMs) {

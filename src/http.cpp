@@ -33,12 +33,12 @@ bool sendStatusUpdate() {
     }
 
     // Inputs (digital states)
-    doc["il1"] = currentData.bathroomLight1;     // input bathroom light 1
-    doc["il2"] = currentData.bathroomLight2;     // input bathroom light 2
-    doc["iul"] = currentData.utilityLight;       // input utility light
-    doc["iwc"] = currentData.wcLight;            // input wc light
-    doc["iwr"] = currentData.windowSensor1;      // input window roof
-    doc["iwb"] = currentData.windowSensor2;      // input window balcony
+    doc["il1"] = currentData.bathroomLight1 ? 1 : 0;     // input bathroom light 1
+    doc["il2"] = currentData.bathroomLight2 ? 1 : 0;     // input bathroom light 2
+    doc["iul"] = currentData.utilityLight ? 1 : 0;       // input utility light
+    doc["iwc"] = currentData.wcLight ? 1 : 0;            // input wc light
+    doc["iwr"] = currentData.windowSensor1 ? 1 : 0;      // input window roof
+    doc["iwb"] = currentData.windowSensor2 ? 1 : 0;      // input window balcony
 
     // Off-times (Unix timestamps)
     doc["twc"] = currentData.offTimes[2];        // time wc
@@ -141,12 +141,12 @@ void checkAndSendStatusUpdate() {
     uint8_t currentFanKop = currentData.disableBathroom ? 9 : (currentData.bathroomFan ? 1 : 0);
     uint8_t currentFanDse = currentData.disableLivingRoom ? 9 : currentData.livingExhaustLevel;
 
-    uint8_t currentInputL1 = currentData.bathroomLight1;
-    uint8_t currentInputL2 = currentData.bathroomLight2;
-    uint8_t currentInputUl = currentData.utilityLight;
-    uint8_t currentInputWc = currentData.wcLight;
-    uint8_t currentInputWr = currentData.windowSensor1;
-    uint8_t currentInputWb = currentData.windowSensor2;
+    uint8_t currentInputL1 = currentData.bathroomLight1 ? 1 : 0;
+    uint8_t currentInputL2 = currentData.bathroomLight2 ? 1 : 0;
+    uint8_t currentInputUl = currentData.utilityLight ? 1 : 0;
+    uint8_t currentInputWc = currentData.wcLight ? 1 : 0;
+    uint8_t currentInputWr = currentData.windowSensor1 ? 1 : 0;
+    uint8_t currentInputWb = currentData.windowSensor2 ? 1 : 0;
 
     // Check if any state changed
     static uint8_t lastFanWc = 255, lastFanUt = 255, lastFanKop = 255, lastFanDse = 255;
