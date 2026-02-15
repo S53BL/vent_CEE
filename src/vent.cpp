@@ -677,6 +677,26 @@ float calculateDutyCycle() {
     // Update global duty cycle
     currentData.livingRoomDutyCycle = cyclePercent;
 
+    // Log duty cycle calculation details only when changed
+    static float previousCyclePercent = -1.0;
+    if (abs(cyclePercent - previousCyclePercent) > 0.1) {  // Log if change > 0.1%
+        char logDetails[256];
+        snprintf(logDetails, sizeof(logDetails),
+                 "Duty cycle calc: Base=%.1f%%, Hum: %.1f%% (%s), CO2: %.0f (%s), Temp: %.1f°C (%s), Adverse: %s, Final: %.1f%%",
+                 settings.cycleActivePercentDS,
+                 humidityValid ? currentData.livingHumidity : NAN,
+                 (humidityValid && (currentData.livingHumidity >= settings.humThresholdDS || currentData.livingHumidity >= settings.humThresholdHighDS)) ? "active" : "inactive",
+                 co2Valid ? currentData.livingCO2 : NAN,
+                 (co2Valid && (currentData.livingCO2 >= settings.co2ThresholdLowDS || currentData.livingCO2 >= settings.co2ThresholdHighDS)) ? "active" : "inactive",
+                 tempValid ? currentData.livingTemp : NAN,
+                 (!isNND && tempValid && externalTempValid && ((currentData.livingTemp > settings.tempIdealDS && currentData.externalTemp < currentData.livingTemp) ||
+                 (currentData.livingTemp < settings.tempIdealDS && currentData.externalTemp > currentData.livingTemp))) ? "active" : "inactive",
+                 adverseConditions ? "YES (-50%)" : "NO",
+                 cyclePercent);
+        LOG_INFO("DS Vent", "%s", logDetails);
+        previousCyclePercent = cyclePercent;
+    }
+
     return cyclePercent;
 }
 
@@ -800,20 +820,24 @@ void startLivingRoomFan(float cyclePercent, bool& fanActive, uint8_t& currentLev
     currentData.offTimes[4] = myTZ.now() + activeDurationMs / 1000;
     currentData.offTimes[5] = currentData.offTimes[4];
 
-    char reason[64];
+    // Determine level reason
+    const char* levelReason = isDND ? "DND" : (highIncrement ? "High increment" : "Normal");
+
+    // Determine trigger reason
+    char triggerReason[128];
     if (highIncrement) {
         if (humidityValid && currentData.livingHumidity >= settings.humThresholdHighDS) {
-            snprintf(reason, sizeof(reason), "H_DS=%.1f%%>humThresholdHighDS=%.1f%%", currentData.livingHumidity, settings.humThresholdHighDS);
+            snprintf(triggerReason, sizeof(triggerReason), "H_DS=%.1f%%>humThresholdHighDS=%.1f%%", currentData.livingHumidity, settings.humThresholdHighDS);
         } else if (co2Valid && currentData.livingCO2 >= settings.co2ThresholdHighDS) {
-            snprintf(reason, sizeof(reason), "CO2=%.0f>co2ThresholdHighDS=%.0f", currentData.livingCO2, settings.co2ThresholdHighDS);
+            snprintf(triggerReason, sizeof(triggerReason), "CO2=%.0f>co2ThresholdHighDS=%.0f", currentData.livingCO2, settings.co2ThresholdHighDS);
         } else {
-            strcpy(reason, "High increment (invalid data)");
+            strcpy(triggerReason, "High increment (invalid data)");
         }
     } else {
-        strcpy(reason, "Auto cycle");
+        strcpy(triggerReason, "Auto cycle");
     }
 
-    LOG_INFO("DS Vent", "ON: %s, Level %d, Duration: %u s", reason, newLevel, activeDurationMs / 1000);
+    LOG_INFO("DS Vent", "ON: %s, Duty: %.1f%%, Level %d (%s), Duration: %u s", triggerReason, cyclePercent, newLevel, levelReason, activeDurationMs / 1000);
 }
 
 // Helper function: Start manual living room fan

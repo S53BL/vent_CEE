@@ -248,7 +248,6 @@ const char* HTML_HELP = R"rawliteral(
         <h2>Navigacija</h2>
         <a href="/" class="nav-button">Domača stran</a>
         <a href="/settings" class="nav-button">Nastavitve</a>
-        <a href="/sensor-offsets" class="nav-button">Nastavitve senzorjev</a>
         <a href="/help" class="nav-button">Pomoč</a>
         <h3 style="color: #4da6ff; margin: 20px 0 10px 0; font-size: 14px;">Druge enote</h3>
         <a href="http://192.168.2.190/" class="nav-button" style="font-size: 12px;">REW</a>
@@ -276,7 +275,7 @@ const char* HTML_HELP = R"rawliteral(
                 <ul class="toc-list toc-sub">
                     <li><a href="#2-1-domaca-stran">2.1 Domača stran</a></li>
                     <li><a href="#2-2-stran-z-nastavitvami">2.2 Stran z nastavitvami</a></li>
-                    <li><a href="#2-3-stran-za-kalibracijo-senzorjev">2.3 Stran za kalibracijo senzorjev</a></li>
+                    <li><a href="#2-3-stran-za-kalibracijo-senzorjev">2.3 Nastavitve senzorjev (del strani Nastavitve)</a></li>
                 </ul>
             </li>
             <li><a href="#3-kako-delujejo-ventilatorji">3. Kako delujejo ventilatorji</a>
@@ -376,11 +375,11 @@ const char* HTML_HELP = R"rawliteral(
 <li><strong>Sistem</strong>: Uporaba RAM-a, uptime, log velikost.</li>
 <li><strong>Status</strong>: Ali senzorji delujejo, napake.</li>
 </ul>
-<p>Na vrhu strani so povezave: "Nastavitve" (za prilagajanje parametrov), "Nastavitve senzorjev" (če odčitki niso točni), "Pomoč" (ta priročnik).</p>
+<p>Na vrhu strani so povezave: "Nastavitve" (za prilagajanje parametrov in kalibracijo senzorjev), "Pomoč" (ta priročnik).</p>
 <h3>2.2 Stran z nastavitvami (Nastavitve)</h3>
 <p>Tu prilagajate parametre. Vsak parameter ima polje za vrednost, opis in obseg. Spremenite vrednost, kliknite "Shrani" – sprememba velja takoj. Če ne veste, kaj parameter naredi, glej razdelek 6 tega priročnika, kjer so vsi razloženi s primeri.</p>
-<h3>2.3 Stran za kalibracijo senzorjev (Nastavitve senzorjev)</h3>
-<p>Če senzorji kažejo napačno temperaturo/vlago (npr. +1°C preveč), tu dodate popravek (offset). Vnesite vrednost, shrani – senzorji se popravijo. Uporabite, če primerjate z drugim termometrom.</p>
+<h3>2.3 Nastavitve senzorjev (del strani Nastavitve)</h3>
+<p>Če senzorji kažejo napačno temperaturo/vlago (npr. +1°C preveč), v nadaljevanju strani Nastavitve dodate popravek (offset). Vnesite vrednost, shrani – senzorji se popravijo. Uporabite, če primerjate z drugim termometrom.</p>
 <hr />
 <h2>3. Kako delujejo ventilatorji</h2>
 <p>Sistem ima tri načine krmiljenja za vsak prostor: ročni (vi ukrepate), polavtomatski (reagira na vaše akcije) in avtomatski (sam meri). Vsak prostor ima prilagojeno logiko. Tukaj so primeri, kdaj se ventilator vklopi/izklopi, in kako to prilagajate v nastavitvah.</p>

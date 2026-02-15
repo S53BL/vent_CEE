@@ -81,7 +81,7 @@ bool sendStatusUpdate() {
     serializeJson(doc, jsonString);
 
     // Structured logging for readability
-    LOG_INFO("HTTP", "S_U FAN: fwc=%d fut=%d fkop=%d fdse=%d", (int)doc["fwc"], (int)doc["fut"], (int)doc["fkop"], (int)doc["fdse"]);
+    LOG_INFO("HTTP", "STATUS_UPDATE FAN: fwc=%d fut=%d fkop=%d fdse=%d", (int)doc["fwc"], (int)doc["fut"], (int)doc["fkop"], (int)doc["fdse"]);
     LOG_INFO("HTTP", "S_U INPUT: il1=%d il2=%d iul=%d iwc=%d iwr=%d iwb=%d", (int)doc["il1"], (int)doc["il2"], (int)doc["iul"], (int)doc["iwc"], (int)doc["iwr"], (int)doc["iwb"]);
     LOG_INFO("HTTP", "S_U OFFTIME: twc=%d tut=%d tkop=%d tdse=%d", (int)doc["twc"], (int)doc["tut"], (int)doc["tkop"], (int)doc["tdse"]);
     LOG_INFO("HTTP", "S_U SENSOR: tbat=%.1f hbat=%.1f pbat=%.1f tutl=%.1f hutl=%.1f", (float)doc["tbat"], (float)doc["hbat"], (float)doc["pbat"], (float)doc["tutl"], (float)doc["hutl"]);

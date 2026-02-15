@@ -269,22 +269,16 @@ void loop() {
         lastSensorRead = now;
     }
 
-    // Periodic input reading
+    // Periodic input reading and vent control - every 200ms
     static unsigned long lastInputRead = 0;
     if (now - lastInputRead >= 200) {  // Every 200ms
         readInputs();
-        lastInputRead = now;
-    }
-
-    // Vent control functions - every 1 second (separate from input reading)
-    static unsigned long lastVentControl = 0;
-    if (now - lastVentControl >= 1000) {  // Every 1 second
         controlBathroom();
         controlUtility();
         controlWC();
         controlLivingRoom();
         controlFans();
-        lastVentControl = now;
+        lastInputRead = now;
     }
 
 

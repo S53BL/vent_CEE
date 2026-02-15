@@ -139,12 +139,6 @@ void loadSettings() {
     return;
   }
 
-  // Dodaj LOG_INFO za prebrana ključna polja
-  LOG_INFO("Settings", "Prebrano: humThreshold=%.1f, fanDuration=%d, lastKnownUnixTime=%lu", settings.humThreshold, settings.fanDuration, settings.lastKnownUnixTime);
-
-  // Dodaj hexdump
-  hexdumpCRCData((const uint8_t*)&settings, sizeof(Settings), "loadSettings");
-
   // Izračunaj CRC
   uint16_t calculated_crc = calculateCRC((const uint8_t*)&settings, sizeof(Settings));
 
@@ -160,12 +154,7 @@ void loadSettings() {
 void saveSettings() {
   if (!useNVS) return;
 
-  // Dodaj LOG_INFO za vsa shranjena polja
-  LOG_INFO("Settings", "Shranjujem: humThreshold=%.1f, fanDuration=%d, fanOffDuration=%d, fanOffDurationKop=%d, tempLowThreshold=%.1f, tempMinThreshold=%.1f, dndAllowableAutomatic=%d, dndAllowableSemiautomatic=%d, dndAllowableManual=%d, cycleDurationDS=%d, cycleActivePercentDS=%.1f, humThresholdDS=%.1f, humThresholdHighDS=%.1f, co2ThresholdLowDS=%d, co2ThresholdHighDS=%d, incrementPercentLowDS=%.1f, incrementPercentHighDS=%.1f, incrementPercentTempDS=%.1f, tempIdealDS=%.1f, tempExtremeHighDS=%.1f, tempExtremeLowDS=%.1f, humExtremeHighDS=%.1f, bmeTempOffset=%.1f, bmeHumidityOffset=%.1f, bmePressureOffset=%.1f, shtTempOffset=%.1f, shtHumidityOffset=%.1f, reservedSensor1=%.1f, reservedSensor2=%.1f, lastKnownUnixTime=%lu",
-           settings.humThreshold, settings.fanDuration, settings.fanOffDuration, settings.fanOffDurationKop, settings.tempLowThreshold, settings.tempMinThreshold, settings.dndAllowableAutomatic, settings.dndAllowableSemiautomatic, settings.dndAllowableManual, settings.cycleDurationDS, settings.cycleActivePercentDS, settings.humThresholdDS, settings.humThresholdHighDS, settings.co2ThresholdLowDS, settings.co2ThresholdHighDS, settings.incrementPercentLowDS, settings.incrementPercentHighDS, settings.incrementPercentTempDS, settings.tempIdealDS, settings.tempExtremeHighDS, settings.tempExtremeLowDS, settings.humExtremeHighDS, settings.bmeTempOffset, settings.bmeHumidityOffset, settings.bmePressureOffset, settings.shtTempOffset, settings.shtHumidityOffset, settings.reservedSensor1, settings.reservedSensor2, settings.lastKnownUnixTime);
-
-  // Dodaj hexdump pred CRC
-  hexdumpCRCData((const uint8_t*)&settings, sizeof(Settings), "saveSettings");
+  LOG_INFO("Settings", "Shranjujem nastavitve");
 
   Preferences prefs;
   prefs.begin("settings", false);

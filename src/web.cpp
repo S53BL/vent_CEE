@@ -544,7 +544,6 @@ const char* HTML_SETTINGS = R"rawliteral(
         <h2>Navigacija</h2>
         <a href="/" class="nav-button">Domača stran</a>
         <a href="/settings" class="nav-button">Nastavitve</a>
-        <a href="/sensor-offsets" class="nav-button">Nastavitve senzorjev</a>
         <a href="/help" class="nav-button">Pomoč</a>
         <h3 style="color: #4da6ff; margin: 20px 0 10px 0; font-size: 14px;">Druge enote</h3>
         <a href="http://192.168.2.190/" class="nav-button" style="font-size: 12px;">REW</a>
@@ -699,6 +698,38 @@ const char* HTML_SETTINGS = R"rawliteral(
                     <input type="number" name="tempExtremeLowDS" id="tempExtremeLowDS" step="1" min="-20" max="40">
                     <div class="description">Zunanja temperatura, pri kateri se cikel prezračevanja zmanjša, da se izogne vnosu mrzlega zraka. Če pozimi želite manj prepiha, dvignite na -5 °C (-20–40 °C).</div>
                 </div>
+
+                <h3 style="color: #4da6ff; margin: 40px 0 20px 0; font-size: 20px; border-bottom: 2px solid #4da6ff; padding-bottom: 5px;">Nastavitve senzorjev</h3>
+
+                <div class="form-group">
+                    <label for="bmeTempOffset">Offset temperature BME280 (°C)</label>
+                    <input type="number" id="bmeTempOffset" name="bmeTempOffset" step="0.1" min="-10.0" max="10.0">
+                    <div class="description">Prilagoditev temperature BME280 senzorja (-10.0 do +10.0 °C)</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="bmeHumidityOffset">Offset vlažnosti BME280 (%)</label>
+                    <input type="number" id="bmeHumidityOffset" name="bmeHumidityOffset" step="0.1" min="-20.0" max="20.0">
+                    <div class="description">Prilagoditev vlažnosti BME280 senzorja (-20.0 do +20.0 %)</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="bmePressureOffset">Offset tlaka BME280 (hPa)</label>
+                    <input type="number" id="bmePressureOffset" name="bmePressureOffset" step="0.1" min="-50.0" max="50.0">
+                    <div class="description">Prilagoditev tlaka BME280 senzorja (-50.0 do +50.0 hPa)</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="shtTempOffset">Offset temperature SHT41 (°C)</label>
+                    <input type="number" id="shtTempOffset" name="shtTempOffset" step="0.1" min="-10.0" max="10.0">
+                    <div class="description">Prilagoditev temperature SHT41 senzorja (-10.0 do +10.0 °C)</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="shtHumidityOffset">Offset vlažnosti SHT41 (%)</label>
+                    <input type="number" id="shtHumidityOffset" name="shtHumidityOffset" step="0.1" min="-20.0" max="20.0">
+                    <div class="description">Prilagoditev vlažnosti SHT41 senzorja (-20.0 do +20.0 %)</div>
+                </div>
             </form>
         </div>
     </div>
@@ -844,6 +875,11 @@ const char* HTML_SETTINGS = R"rawliteral(
                     document.getElementById("tempIdealDS").value = data.TEMP_IDEAL_DS;
                     document.getElementById("tempExtremeHighDS").value = data.TEMP_EXTREME_HIGH_DS;
                     document.getElementById("tempExtremeLowDS").value = data.TEMP_EXTREME_LOW_DS;
+                    document.getElementById("bmeTempOffset").value = data.BME_TEMP_OFFSET;
+                    document.getElementById("bmeHumidityOffset").value = data.BME_HUMIDITY_OFFSET;
+                    document.getElementById("bmePressureOffset").value = data.BME_PRESSURE_OFFSET;
+                    document.getElementById("shtTempOffset").value = data.SHT_TEMP_OFFSET;
+                    document.getElementById("shtHumidityOffset").value = data.SHT_HUMIDITY_OFFSET;
                 })
                 .catch(error => console.error('Napaka pri nalaganju nastavitev:', error));
         }
@@ -876,6 +912,11 @@ const char* HTML_SETTINGS = R"rawliteral(
             formData.append('tempIdealDS', document.getElementById('tempIdealDS').value);
             formData.append('tempExtremeHighDS', document.getElementById('tempExtremeHighDS').value);
             formData.append('tempExtremeLowDS', document.getElementById('tempExtremeLowDS').value);
+            formData.append('bmeTempOffset', document.getElementById('bmeTempOffset').value);
+            formData.append('bmeHumidityOffset', document.getElementById('bmeHumidityOffset').value);
+            formData.append('bmePressureOffset', document.getElementById('bmePressureOffset').value);
+            formData.append('shtTempOffset', document.getElementById('shtTempOffset').value);
+            formData.append('shtHumidityOffset', document.getElementById('shtHumidityOffset').value);
 
             const data = {};
             for (let [key, value] of formData.entries()) {
@@ -983,430 +1024,13 @@ const char* HTML_SETTINGS = R"rawliteral(
             });
         }
 
-        updateInterval = setInterval(updateSettings, 10000);
         loadCurrentSettings();
-        updateSettings();
-
-        // Ustavljanje updateInterval ob fokusiranju na inpute in select elemente
-        const formElements = document.querySelectorAll('#settingsForm input, #settingsForm select');
-        formElements.forEach(element => {
-            element.addEventListener('focus', () => clearInterval(updateInterval));
-            element.addEventListener('blur', () => updateInterval = setInterval(updateSettings, 10000));
-        });
     </script>
 </body>
 </html>
 )rawliteral";
 
-// HTML template for sensor offsets page
-const char* HTML_SETTINGS_SENSOR_OFFSETS = R"rawliteral(
-<!DOCTYPE html>
-<html lang="sl">
-<head>
-    <meta charset="UTF-8">
-    <title>CEE - Nastavitve senzorjev</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
-            font-size: 16px;
-            background: #101010;
-            color: #e0e0e0;
-            display: flex;
-        }
-        .sidebar {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 160px;
-            height: 100vh;
-            background: #1a1a1a;
-            border: 1px solid #333;
-            border-radius: 0;
-            padding: 20px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-            overflow-y: auto;
-            z-index: 1000;
-        }
-        .sidebar h2 {
-            color: #4da6ff;
-            margin-top: 0;
-            margin-bottom: 20px;
-            font-size: 18px;
-            text-align: center;
-            border-bottom: 2px solid #4da6ff;
-            padding-bottom: 5px;
-        }
-        .sidebar .nav-button {
-            display: block;
-            width: 100%;
-            padding: 15px;
-            margin-bottom: 10px;
-            background-color: #4da6ff;
-            color: #101010;
-            text-decoration: none;
-            border-radius: 6px;
-            font-size: 14px;
-            font-weight: bold;
-            text-align: center;
-            border: none;
-            cursor: pointer;
-            box-sizing: border-box;
-        }
-        .sidebar .nav-button:hover {
-            background-color: #6bb3ff;
-        }
-        .main-content {
-            margin-left: 180px;
-            margin-right: 180px;
-            padding: 20px;
-        }
-        .right-sidebar {
-            position: fixed;
-            top: 0;
-            right: 0;
-            width: 160px;
-            height: 100vh;
-            background: #1a1a1a;
-            border: 1px solid #333;
-            border-radius: 0;
-            padding: 20px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-            overflow-y: auto;
-            z-index: 1000;
-        }
-        .right-sidebar h2 {
-            color: #4da6ff;
-            margin-top: 0;
-            margin-bottom: 20px;
-            font-size: 18px;
-            text-align: center;
-            border-bottom: 2px solid #4da6ff;
-            padding-bottom: 5px;
-        }
-        .right-sidebar .action-button {
-            display: block;
-            width: 100%;
-            padding: 15px;
-            margin-bottom: 10px;
-            background-color: #4da6ff;
-            color: #101010;
-            text-decoration: none;
-            border-radius: 6px;
-            font-size: 14px;
-            font-weight: bold;
-            text-align: center;
-            border: none;
-            cursor: pointer;
-            box-sizing: border-box;
-        }
-        .right-sidebar .action-button:hover {
-            background-color: #6bb3ff;
-        }
-        .right-sidebar .save-button {
-            background-color: #4da6ff;
-        }
-        .right-sidebar .reset-button {
-            background-color: #ffaa00;
-        }
-        .right-sidebar .reset-button:hover {
-            background-color: #e69500;
-        }
-        h1 {
-            color: white;
-            text-align: center;
-        }
-        .settings-form {
-            max-width: 800px;
-            margin: 20px auto;
-            background: #1a1a1a;
-            padding: 20px;
-            border-radius: 8px;
-            border: 1px solid #333;
-        }
-        .form-group {
-            margin-bottom: 20px;
-        }
-        .form-group label {
-            display: block;
-            margin-bottom: 5px;
-            font-weight: bold;
-            color: #e0e0e0;
-        }
-        .form-group input[type="number"] {
-            width: 100%;
-            padding: 10px;
-            background: #2a2a2a;
-            border: 1px solid #555;
-            border-radius: 4px;
-            color: #e0e0e0;
-            font-size: 16px;
-        }
-        .form-group input[type="number"]:focus {
-            outline: none;
-            border-color: #4da6ff;
-        }
-        .form-group .description {
-            font-size: 14px;
-            color: #aaa;
-            margin-top: 5px;
-        }
-        .current-values {
-            background: #2a2a2a;
-            padding: 15px;
-            border-radius: 4px;
-            margin-bottom: 20px;
-            border: 1px solid #444;
-        }
-        .current-values h3 {
-            margin-top: 0;
-            color: #4da6ff;
-        }
-        .value-item {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 5px;
-        }
-        .value-item:last-child {
-            margin-bottom: 0;
-        }
-        .buttons {
-            display: flex;
-            gap: 15px;
-            justify-content: center;
-            margin-top: 30px;
-        }
-        .btn {
-            padding: 12px 24px;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 16px;
-            font-weight: bold;
-            text-decoration: none;
-            display: inline-block;
-            text-align: center;
-        }
-        .btn-primary {
-            background: #4da6ff;
-            color: white;
-        }
-        .btn-primary:hover {
-            background: #3a8ae6;
-        }
-        .btn-secondary {
-            background: #ffaa00;
-            color: #101010;
-        }
-        .btn-secondary:hover {
-            background: #e69500;
-        }
-        .btn-danger {
-            background: #ff4444;
-            color: white;
-        }
-        .btn-danger:hover {
-            background: #e63939;
-        }
-        .message {
-            padding: 15px;
-            border-radius: 4px;
-            margin-bottom: 20px;
-            font-weight: bold;
-        }
-        .message.success {
-            background: #44ff44;
-            color: #101010;
-            border: 1px solid #22dd22;
-        }
-        .message.error {
-            background: #ff4444;
-            color: white;
-            border: 1px solid #dd2222;
-        }
-        .back {
-            text-align: center;
-            margin-top: 30px;
-        }
-        .back a {
-            color: #4da6ff;
-            text-decoration: none;
-            padding: 10px 20px;
-            border: 1px solid #4da6ff;
-            border-radius: 5px;
-        }
-        .back a:hover {
-            background: #4da6ff;
-            color: #101010;
-        }
-    </style>
-</head>
-<body>
-    <div class="sidebar">
-        <h2>Navigacija</h2>
-        <a href="/" class="nav-button">Domača stran</a>
-        <a href="/settings" class="nav-button">Nastavitve</a>
-        <a href="/sensor-offsets" class="nav-button">Nastavitve senzorjev</a>
-        <a href="/help" class="nav-button">Pomoč</a>
-        <h3 style="color: #4da6ff; margin: 20px 0 10px 0; font-size: 14px;">Druge enote</h3>
-        <a href="http://192.168.2.190/" class="nav-button" style="font-size: 12px;">REW</a>
-        <a href="http://192.168.2.191/" class="nav-button" style="font-size: 12px;">SEW</a>
-        <a href="http://192.168.2.193/" class="nav-button" style="font-size: 12px;">UT_DEW</a>
-        <a href="http://192.168.2.194/" class="nav-button" style="font-size: 12px;">KOP_DEW</a>
-    </div>
-    <div class="main-content">
-        <h1>Nastavitve senzorjev</h1>
 
-    <div id="message" class="message" style="display: none;"></div>
-
-    <form class="settings-form" id="settingsForm">
-        <div class="form-group">
-            <label for="bmeTempOffset">Offset temperature BME280 (°C)</label>
-            <input type="number" id="bmeTempOffset" name="bmeTempOffset" step="0.1" min="-10.0" max="10.0" required>
-            <div class="description">Prilagoditev temperature BME280 senzorja (-10.0 do +10.0 °C)</div>
-        </div>
-
-        <div class="form-group">
-            <label for="bmeHumidityOffset">Offset vlažnosti BME280 (%)</label>
-            <input type="number" id="bmeHumidityOffset" name="bmeHumidityOffset" step="0.1" min="-20.0" max="20.0" required>
-            <div class="description">Prilagoditev vlažnosti BME280 senzorja (-20.0 do +20.0 %)</div>
-        </div>
-
-        <div class="form-group">
-            <label for="bmePressureOffset">Offset tlaka BME280 (hPa)</label>
-            <input type="number" id="bmePressureOffset" name="bmePressureOffset" step="0.1" min="-50.0" max="50.0" required>
-            <div class="description">Prilagoditev tlaka BME280 senzorja (-50.0 do +50.0 hPa)</div>
-        </div>
-
-        <div class="form-group">
-            <label for="shtTempOffset">Offset temperature SHT41 (°C)</label>
-            <input type="number" id="shtTempOffset" name="shtTempOffset" step="0.1" min="-10.0" max="10.0" required>
-            <div class="description">Prilagoditev temperature SHT41 senzorja (-10.0 do +10.0 °C)</div>
-        </div>
-
-        <div class="form-group">
-            <label for="shtHumidityOffset">Offset vlažnosti SHT41 (%)</label>
-            <input type="number" id="shtHumidityOffset" name="shtHumidityOffset" step="0.1" min="-20.0" max="20.0" required>
-            <div class="description">Prilagoditev vlažnosti SHT41 senzorja (-20.0 do +20.0 %)</div>
-        </div>
-
-
-    </form>
-
-    <div class="right-sidebar">
-        <h2>Akcije</h2>
-        <button type="button" class="action-button save-button" onclick="saveSettings()">Shrani</button>
-        <button type="button" class="action-button reset-button" onclick="resetToDefaults()">Ponastavi</button>
-    </div>
-
-    <script>
-        function saveSettings() {
-            var formData = new FormData();
-            formData.append('bmeTempOffset', document.getElementById('bmeTempOffset').value);
-            formData.append('bmeHumidityOffset', document.getElementById('bmeHumidityOffset').value);
-            formData.append('bmePressureOffset', document.getElementById('bmePressureOffset').value);
-            formData.append('shtTempOffset', document.getElementById('shtTempOffset').value);
-            formData.append('shtHumidityOffset', document.getElementById('shtHumidityOffset').value);
-
-            fetch('/api/sensor-offsets', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(result => {
-                if (result.success) {
-                    showMessage(result.message, 'success');
-                    loadCurrentSettings(); // Reload current values
-                } else {
-                    showMessage(result.error || 'Napaka pri shranjevanju', 'error');
-                }
-            })
-            .catch(error => {
-                showMessage('Napaka pri shranjevanju: ' + error, 'error');
-            });
-        }
-
-        // Load current settings on page load
-        loadCurrentSettings();
-
-        function loadCurrentSettings() {
-            fetch('/api/sensor-offsets')
-                .then(response => response.json())
-                .then(data => {
-                    document.getElementById('bmeTempOffset').value = data.bmeTempOffset;
-                    document.getElementById('bmeHumidityOffset').value = data.bmeHumidityOffset;
-                    document.getElementById('bmePressureOffset').value = data.bmePressureOffset;
-                    document.getElementById('shtTempOffset').value = data.shtTempOffset;
-                    document.getElementById('shtHumidityOffset').value = data.shtHumidityOffset;
-                })
-                .catch(error => {
-                    showMessage('Napaka pri nalaganju nastavitev: ' + error, 'error');
-                });
-        }
-
-        function showMessage(text, type) {
-            const messageDiv = document.getElementById('message');
-            messageDiv.textContent = text;
-            messageDiv.className = 'message ' + type;
-            messageDiv.style.display = 'block';
-
-            // Auto-hide after 5 seconds
-            setTimeout(() => {
-                messageDiv.style.display = 'none';
-            }, 5000);
-        }
-
-        // Handle form submission
-        document.getElementById('settingsForm').addEventListener('submit', function(e) {
-            e.preventDefault();
-
-            const formData = new FormData(this);
-            const data = {};
-            for (let [key, value] of formData.entries()) {
-                data[key] = value;
-            }
-
-            fetch('/api/sensor-offsets', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                },
-                body: new URLSearchParams(data)
-            })
-            .then(response => response.json())
-            .then(result => {
-                if (result.success) {
-                    showMessage(result.message, 'success');
-                    loadCurrentSettings(); // Reload current values
-                } else {
-                    showMessage(result.error || 'Napaka pri shranjevanju', 'error');
-                }
-            })
-            .catch(error => {
-                showMessage('Napaka pri shranjevanju: ' + error, 'error');
-            });
-        });
-
-        function resetToDefaults() {
-            fetch('/api/sensor-offsets-reset', {
-                method: 'POST'
-            })
-            .then(response => response.json())
-            .then(result => {
-                if (result.success) {
-                    showMessage(result.message, 'success');
-                    loadCurrentSettings(); // Reload current values
-                } else {
-                    showMessage(result.error || 'Napaka pri ponastavitvi', 'error');
-                }
-            })
-            .catch(error => {
-                showMessage('Napaka pri ponastavitvi: ' + error, 'error');
-            });
-        }
-    </script>
-</body>
-</html>)rawliteral";
 
 bool settingsUpdatePending = false;
 unsigned long settingsUpdateStartTime = 0;
@@ -1543,7 +1167,6 @@ void handleRoot(AsyncWebServerRequest *request) {
     <div class="sidebar">
         <h2>Navigacija</h2>
         <a href="/settings" class="nav-button">Nastavitve</a>
-        <a href="/sensor-offsets" class="nav-button">Nastavitve senzorjev</a>
         <a href="/help" class="nav-button">Pomoč</a>
         <h3 style="color: #4da6ff; margin: 20px 0 10px 0; font-size: 14px;">Druge enote</h3>
         <a href="http://192.168.2.190/" class="nav-button" style="font-size: 12px;">REW</a>
@@ -1675,6 +1298,43 @@ void handleRoot(AsyncWebServerRequest *request) {
             <div class="status-item">
                 <span class="status-label">Preostali čas:</span>
                 <span class="status-value" id="ds-remaining">)rawliteral" + String(getRemainingTime(4)) + R"rawliteral( s</span>
+            </div>
+        </div>
+
+        <!-- DS Duty Cycle Card -->
+        <div class="card">
+            <h2>DS Duty Cycle Parametri</h2>
+            <div class="status-item">
+                <span class="status-label">CO2 Low Threshold:</span>
+                <span class="status-value">)rawliteral" + String(settings.co2ThresholdLowDS) + R"rawliteral( ppm</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">CO2 High Threshold:</span>
+                <span class="status-value">)rawliteral" + String(settings.co2ThresholdHighDS) + R"rawliteral( ppm</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Hum Low Threshold:</span>
+                <span class="status-value">)rawliteral" + String(settings.humThresholdDS, 1) + R"rawliteral( %</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Hum High Threshold:</span>
+                <span class="status-value">)rawliteral" + String(settings.humThresholdHighDS, 1) + R"rawliteral( %</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Low Increment:</span>
+                <span class="status-value">)rawliteral" + String(settings.incrementPercentLowDS, 1) + R"rawliteral( %</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">High Increment:</span>
+                <span class="status-value">)rawliteral" + String(settings.incrementPercentHighDS, 1) + R"rawliteral( %</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Temp Increment:</span>
+                <span class="status-value">)rawliteral" + String(settings.incrementPercentTempDS, 1) + R"rawliteral( %</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Base Cycle:</span>
+                <span class="status-value">)rawliteral" + String(settings.cycleActivePercentDS, 1) + R"rawliteral( %</span>
             </div>
         </div>
 
@@ -1986,7 +1646,12 @@ void handleDataRequest(AsyncWebServerRequest *request) {
                 String("\"INCREMENT_PERCENT_TEMP_DS\":\"") + String((int)tempSettings.incrementPercentTempDS) + "\"," +
                 String("\"TEMP_IDEAL_DS\":\"") + String((int)tempSettings.tempIdealDS) + "\"," +
                 String("\"TEMP_EXTREME_HIGH_DS\":\"") + String((int)tempSettings.tempExtremeHighDS) + "\"," +
-                String("\"TEMP_EXTREME_LOW_DS\":\"") + String((int)tempSettings.tempExtremeLowDS) + "\"}" ;
+                String("\"TEMP_EXTREME_LOW_DS\":\"") + String((int)tempSettings.tempExtremeLowDS) + "\"," +
+                String("\"BME_TEMP_OFFSET\":\"") + String(tempSettings.bmeTempOffset, 2) + "\"," +
+                String("\"BME_HUMIDITY_OFFSET\":\"") + String(tempSettings.bmeHumidityOffset, 2) + "\"," +
+                String("\"BME_PRESSURE_OFFSET\":\"") + String(tempSettings.bmePressureOffset, 2) + "\"," +
+                String("\"SHT_TEMP_OFFSET\":\"") + String(tempSettings.shtTempOffset, 2) + "\"," +
+                String("\"SHT_HUMIDITY_OFFSET\":\"") + String(tempSettings.shtHumidityOffset, 2) + "\"}" ;
 
   request->send(200, "application/json", json);
 }
@@ -2070,7 +1735,10 @@ void handlePostSettings(AsyncWebServerRequest *request) {
       !request->hasParam("co2ThresholdLowDS", true) || !request->hasParam("co2ThresholdHighDS", true) ||
       !request->hasParam("incrementPercentLowDS", true) || !request->hasParam("incrementPercentHighDS", true) ||
       !request->hasParam("incrementPercentTempDS", true) || !request->hasParam("tempIdealDS", true) ||
-      !request->hasParam("tempExtremeHighDS", true) || !request->hasParam("tempExtremeLowDS", true)) {
+      !request->hasParam("tempExtremeHighDS", true) || !request->hasParam("tempExtremeLowDS", true) ||
+      !request->hasParam("bmeTempOffset", true) || !request->hasParam("bmeHumidityOffset", true) ||
+      !request->hasParam("bmePressureOffset", true) || !request->hasParam("shtTempOffset", true) ||
+      !request->hasParam("shtHumidityOffset", true)) {
     errorMessage = "Manjkajoči parametri";
     LOG_WARN("Web", "Validacijska napaka: %s", errorMessage.c_str());
     request->send(400, "text/plain", errorMessage);
@@ -2100,6 +1768,11 @@ void handlePostSettings(AsyncWebServerRequest *request) {
   newSettings.tempIdealDS = request->getParam("tempIdealDS", true)->value().toFloat();
   newSettings.tempExtremeHighDS = request->getParam("tempExtremeHighDS", true)->value().toFloat();
   newSettings.tempExtremeLowDS = request->getParam("tempExtremeLowDS", true)->value().toFloat();
+  newSettings.bmeTempOffset = request->getParam("bmeTempOffset", true)->value().toFloat();
+  newSettings.bmeHumidityOffset = request->getParam("bmeHumidityOffset", true)->value().toFloat();
+  newSettings.bmePressureOffset = request->getParam("bmePressureOffset", true)->value().toFloat();
+  newSettings.shtTempOffset = request->getParam("shtTempOffset", true)->value().toFloat();
+  newSettings.shtHumidityOffset = request->getParam("shtHumidityOffset", true)->value().toFloat();
 
   // Validacija relacij med parametri
   if (newSettings.humThreshold >= newSettings.humExtremeHighDS) {
@@ -2150,14 +1823,7 @@ void handlePostSettings(AsyncWebServerRequest *request) {
   saveSettings();
   uint16_t new_crc = calculateCRC((const uint8_t*)&settings, sizeof(Settings));
 
-  LOG_INFO("Web", "Shranjene vrednosti: humThreshold=%.1f, fanDuration=%d, fanOffDuration=%d, fanOffDurationKop=%d, tempLowThreshold=%.1f, tempMinThreshold=%.1f, dndAuto=%d, dndSemi=%d, dndMan=%d, cycleDurationDS=%d, cycleActivePercentDS=%.1f, humThresholdDS=%.1f, humThresholdHighDS=%.1f, humExtremeHighDS=%.1f, co2ThresholdLowDS=%d, co2ThresholdHighDS=%d, incLowDS=%.1f, incHighDS=%.1f, incTempDS=%.1f, tempIdealDS=%.1f, tempExtremeHighDS=%.1f, tempExtremeLowDS=%.1f, bmeTempOff=%.2f, bmeHumOff=%.2f, bmePressOff=%.2f, shtTempOff=%.2f, shtHumOff=%.2f CRC=%04X",
-           settings.humThreshold, settings.fanDuration, settings.fanOffDuration, settings.fanOffDurationKop,
-           settings.tempLowThreshold, settings.tempMinThreshold, settings.dndAllowableAutomatic, settings.dndAllowableSemiautomatic, settings.dndAllowableManual,
-           settings.cycleDurationDS, settings.cycleActivePercentDS, settings.humThresholdDS, settings.humThresholdHighDS, settings.humExtremeHighDS,
-           settings.co2ThresholdLowDS, settings.co2ThresholdHighDS, settings.incrementPercentLowDS, settings.incrementPercentHighDS, settings.incrementPercentTempDS,
-           settings.tempIdealDS, settings.tempExtremeHighDS, settings.tempExtremeLowDS,
-           settings.bmeTempOffset, settings.bmeHumidityOffset, settings.bmePressureOffset,
-           settings.shtTempOffset, settings.shtHumidityOffset, new_crc);
+
 
   settingsUpdateSuccess = true;
   settingsUpdateMessage = "Nastavitve shranjene!";
@@ -2194,127 +1860,7 @@ void handleSettingsStatus(AsyncWebServerRequest *request) {
   request->send(200, "application/json", response);
 }
 
-// Sensor offsets handlers
-void handleSensorOffsets(AsyncWebServerRequest *request) {
-  // Log only for initial page loads, not AJAX refreshes
-  if (!request->hasHeader("X-Requested-With") ||
-      request->getHeader("X-Requested-With")->value() != "XMLHttpRequest") {
-    LOG_DEBUG("Web", "Zahtevek: GET /sensor-offsets");
-  }
-  request->send(200, "text/html", HTML_SETTINGS_SENSOR_OFFSETS);
-}
 
-void handleGetSensorOffsets(AsyncWebServerRequest *request) {
-  LOG_DEBUG("Web", "Zahtevek: GET /api/sensor-offsets");
-
-  DynamicJsonDocument doc(256);
-  doc["bmeTempOffset"] = settings.bmeTempOffset;
-  doc["bmeHumidityOffset"] = settings.bmeHumidityOffset;
-  doc["bmePressureOffset"] = settings.bmePressureOffset;
-  doc["shtTempOffset"] = settings.shtTempOffset;
-  doc["shtHumidityOffset"] = settings.shtHumidityOffset;
-
-  String response;
-  serializeJson(doc, response);
-  request->send(200, "application/json", response);
-}
-
-void handlePostSensorOffsets(AsyncWebServerRequest *request) {
-  LOG_DEBUG("Web", "Zahtevek: POST /api/sensor-offsets");
-
-  // Check required parameters
-  if (!request->hasParam("bmeTempOffset", true) ||
-      !request->hasParam("bmeHumidityOffset", true) ||
-      !request->hasParam("bmePressureOffset", true) ||
-      !request->hasParam("shtTempOffset", true) ||
-      !request->hasParam("shtHumidityOffset", true)) {
-    LOG_WARN("Web", "Manjkajoči parametri v POST /api/sensor-offsets");
-    request->send(400, "application/json", "{\"error\":\"Manjkajoči parametri: bmeTempOffset, bmeHumidityOffset, bmePressureOffset, shtTempOffset, shtHumidityOffset\"}");
-    return;
-  }
-
-  // Parse and validate parameters
-  float bmeTempOffset = request->getParam("bmeTempOffset", true)->value().toFloat();
-  float bmeHumidityOffset = request->getParam("bmeHumidityOffset", true)->value().toFloat();
-  float bmePressureOffset = request->getParam("bmePressureOffset", true)->value().toFloat();
-  float shtTempOffset = request->getParam("shtTempOffset", true)->value().toFloat();
-  float shtHumidityOffset = request->getParam("shtHumidityOffset", true)->value().toFloat();
-
-  // Basic validation (reasonable ranges)
-  if (bmeTempOffset < -10.0f || bmeTempOffset > 10.0f) {
-    LOG_WARN("Web", "Neveljaven bmeTempOffset: %.2f", bmeTempOffset);
-    request->send(400, "application/json", "{\"error\":\"bmeTempOffset mora biti med -10.0 in 10.0\"}");
-    return;
-  }
-  if (bmeHumidityOffset < -20.0f || bmeHumidityOffset > 20.0f) {
-    LOG_WARN("Web", "Neveljaven bmeHumidityOffset: %.2f", bmeHumidityOffset);
-    request->send(400, "application/json", "{\"error\":\"bmeHumidityOffset mora biti med -20.0 in 20.0\"}");
-    return;
-  }
-  if (bmePressureOffset < -50.0f || bmePressureOffset > 50.0f) {
-    LOG_WARN("Web", "Neveljaven bmePressureOffset: %.2f", bmePressureOffset);
-    request->send(400, "application/json", "{\"error\":\"bmePressureOffset mora biti med -50.0 in 50.0\"}");
-    return;
-  }
-  if (shtTempOffset < -10.0f || shtTempOffset > 10.0f) {
-    LOG_WARN("Web", "Neveljaven shtTempOffset: %.2f", shtTempOffset);
-    request->send(400, "application/json", "{\"error\":\"shtTempOffset mora biti med -10.0 in 10.0\"}");
-    return;
-  }
-  if (shtHumidityOffset < -20.0f || shtHumidityOffset > 20.0f) {
-    LOG_WARN("Web", "Neveljaven shtHumidityOffset: %.2f", shtHumidityOffset);
-    request->send(400, "application/json", "{\"error\":\"shtHumidityOffset mora biti med -20.0 in 20.0\"}");
-    return;
-  }
-
-  // Update settings
-  settings.bmeTempOffset = bmeTempOffset;
-  settings.bmeHumidityOffset = bmeHumidityOffset;
-  settings.bmePressureOffset = bmePressureOffset;
-  settings.shtTempOffset = shtTempOffset;
-  settings.shtHumidityOffset = shtHumidityOffset;
-
-  // Save to NVS
-  saveSettings();
-
-  LOG_INFO("Web", "Sensor offseti shranjeni: bmeTemp=%.2f, bmeHum=%.2f, bmePress=%.2f, shtTemp=%.2f, shtHum=%.2f",
-           bmeTempOffset, bmeHumidityOffset, bmePressureOffset, shtTempOffset, shtHumidityOffset);
-
-  DynamicJsonDocument doc(256);
-  doc["success"] = true;
-  doc["message"] = "Nastavitve senzorjev shranjene";
-  doc["bmeTempOffset"] = settings.bmeTempOffset;
-  doc["bmeHumidityOffset"] = settings.bmeHumidityOffset;
-  doc["bmePressureOffset"] = settings.bmePressureOffset;
-  doc["shtTempOffset"] = settings.shtTempOffset;
-  doc["shtHumidityOffset"] = settings.shtHumidityOffset;
-
-  String response;
-  serializeJson(doc, response);
-  request->send(200, "application/json", response);
-}
-
-void handleResetSensorOffsets(AsyncWebServerRequest *request) {
-    LOG_DEBUG("Web", "Zahtevek: POST /api/sensor-offsets/reset");
-
-    // Just return current settings from NVS (already loaded in settings struct)
-    // Do NOT change anything!
-
-    LOG_INFO("Web", "Sensor offseti ponovno naloženi iz NVS");
-
-    DynamicJsonDocument doc(256);
-    doc["success"] = true;
-    doc["message"] = "Nastavitve senzorjev ponovno naložene";
-    doc["bmeTempOffset"] = settings.bmeTempOffset;
-    doc["bmeHumidityOffset"] = settings.bmeHumidityOffset;
-    doc["bmePressureOffset"] = settings.bmePressureOffset;
-    doc["shtTempOffset"] = settings.shtTempOffset;
-    doc["shtHumidityOffset"] = settings.shtHumidityOffset;
-
-    String response;
-    serializeJson(doc, response);
-    request->send(200, "application/json", response);
-}
 
 void setupWebServer() {
   LOG_INFO("Web", "Inicializacija web UI strežnika");
@@ -2323,7 +1869,6 @@ void setupWebServer() {
   LOG_DEBUG("Web", "Registriram web UI endpoint-e");
   server.on("/", HTTP_GET, handleRoot);
   server.on("/settings", HTTP_GET, handleSettings);
-  server.on("/sensor-offsets", HTTP_GET, handleSensorOffsets);
   server.on("/help", HTTP_GET, handleHelp);
   server.on("/data", HTTP_GET, handleDataRequest);
   server.on("/current-data", HTTP_GET, handleCurrentDataRequest);
@@ -2331,10 +1876,7 @@ void setupWebServer() {
   server.on("/settings/reset", HTTP_POST, handleResetSettings);
   server.on("/settings/status", HTTP_GET, handleSettingsStatus);
 
-  // Sensor offsets API endpoints
-  server.on("/api/sensor-offsets-reset", HTTP_POST, handleResetSensorOffsets);
-  server.on("/api/sensor-offsets", HTTP_GET, handleGetSensorOffsets);
-  server.on("/api/sensor-offsets", HTTP_POST, handlePostSensorOffsets);
+
 
   // Status endpoint
   server.on("/status", HTTP_GET, [](AsyncWebServerRequest *request) {
