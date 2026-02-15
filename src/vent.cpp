@@ -628,27 +628,39 @@ bool checkAutomaticPreconditions() {
 float calculateDutyCycle() {
     float cyclePercent = settings.cycleActivePercentDS;
 
+    // Only use sensor data if valid (not NaN and within reasonable ranges)
+    bool humidityValid = !isnan(currentData.livingHumidity) && currentData.livingHumidity >= 0 && currentData.livingHumidity <= 100;
+    bool co2Valid = !isnan(currentData.livingCO2) && currentData.livingCO2 >= 0 && currentData.livingCO2 <= 10000;
+    bool tempValid = !isnan(currentData.livingTemp) && currentData.livingTemp >= -50 && currentData.livingTemp <= 100;
+    bool externalTempValid = !isnan(currentData.externalTemp) && currentData.externalTemp >= -50 && currentData.externalTemp <= 100;
+
     // Humidity increments
-    if (currentData.livingHumidity >= settings.humThresholdDS) {
-        cyclePercent += settings.incrementPercentLowDS;
-    }
-    if (currentData.livingHumidity >= settings.humThresholdHighDS) {
-        cyclePercent += settings.incrementPercentHighDS;
+    if (humidityValid) {
+        if (currentData.livingHumidity >= settings.humThresholdDS) {
+            cyclePercent += settings.incrementPercentLowDS;
+        }
+        if (currentData.livingHumidity >= settings.humThresholdHighDS) {
+            cyclePercent += settings.incrementPercentHighDS;
+        }
     }
 
     // CO2 increments
-    if (currentData.livingCO2 >= settings.co2ThresholdLowDS) {
-        cyclePercent += settings.incrementPercentLowDS;
-    }
-    if (currentData.livingCO2 >= settings.co2ThresholdHighDS) {
-        cyclePercent += settings.incrementPercentHighDS;
+    if (co2Valid) {
+        if (currentData.livingCO2 >= settings.co2ThresholdLowDS) {
+            cyclePercent += settings.incrementPercentLowDS;
+        }
+        if (currentData.livingCO2 >= settings.co2ThresholdHighDS) {
+            cyclePercent += settings.incrementPercentHighDS;
+        }
     }
 
     // Temperature increment
     bool isNND = isNNDTime();
-    if (!isNND && ((currentData.livingTemp > settings.tempIdealDS && currentData.externalTemp < currentData.livingTemp) ||
-                   (currentData.livingTemp < settings.tempIdealDS && currentData.externalTemp > currentData.livingTemp))) {
-        cyclePercent += settings.incrementPercentTempDS;
+    if (!isNND && tempValid && externalTempValid) {
+        if ((currentData.livingTemp > settings.tempIdealDS && currentData.externalTemp < currentData.livingTemp) ||
+            (currentData.livingTemp < settings.tempIdealDS && currentData.externalTemp > currentData.livingTemp)) {
+            cyclePercent += settings.incrementPercentTempDS;
+        }
     }
 
     // Adverse conditions reduction
@@ -765,8 +777,12 @@ void startLivingRoomFan(float cyclePercent, bool& fanActive, uint8_t& currentLev
     digitalWrite(PIN_DNEVNI_ODVOD_2, LOW);
     digitalWrite(PIN_DNEVNI_ODVOD_3, LOW);
 
-    bool highIncrement = currentData.livingHumidity >= settings.humThresholdHighDS ||
-                         currentData.livingCO2 >= settings.co2ThresholdHighDS;
+    // Only use valid sensor data for level determination
+    bool humidityValid = !isnan(currentData.livingHumidity) && currentData.livingHumidity >= 0 && currentData.livingHumidity <= 100;
+    bool co2Valid = !isnan(currentData.livingCO2) && currentData.livingCO2 >= 0 && currentData.livingCO2 <= 10000;
+
+    bool highIncrement = (humidityValid && currentData.livingHumidity >= settings.humThresholdHighDS) ||
+                         (co2Valid && currentData.livingCO2 >= settings.co2ThresholdHighDS);
     bool isDND = isDNDTime();
     uint8_t newLevel = isDND ? 1 : (highIncrement ? 3 : 1);
 
@@ -786,10 +802,12 @@ void startLivingRoomFan(float cyclePercent, bool& fanActive, uint8_t& currentLev
 
     char reason[64];
     if (highIncrement) {
-        if (currentData.livingHumidity >= settings.humThresholdHighDS) {
+        if (humidityValid && currentData.livingHumidity >= settings.humThresholdHighDS) {
             snprintf(reason, sizeof(reason), "H_DS=%.1f%%>humThresholdHighDS=%.1f%%", currentData.livingHumidity, settings.humThresholdHighDS);
-        } else {
+        } else if (co2Valid && currentData.livingCO2 >= settings.co2ThresholdHighDS) {
             snprintf(reason, sizeof(reason), "CO2=%.0f>co2ThresholdHighDS=%.0f", currentData.livingCO2, settings.co2ThresholdHighDS);
+        } else {
+            strcpy(reason, "High increment (invalid data)");
         }
     } else {
         strcpy(reason, "Auto cycle");
