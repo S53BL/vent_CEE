@@ -7,6 +7,20 @@
 #include "vent.h"
 #include "system.h"
 
+// Forward declarations for helper functions
+bool checkAutomaticPreconditions();
+float calculateDutyCycle();
+void handleCycleTiming(float cyclePercent, bool canRunAutomatic, bool& fanActive, bool& manualMode,
+                       uint8_t& currentLevel, unsigned long& fanStartTime, unsigned long& lastOffTime);
+void handleManualTriggerLivingRoom(bool& fanActive, bool& manualMode, unsigned long& fanStartTime, uint8_t& currentLevel);
+bool checkManualPreconditions();
+void handleManualTimeout(bool& fanActive, bool& manualMode, unsigned long fanStartTime, uint8_t& currentLevel);
+void handleDisableConditions(bool& fanActive, bool& manualMode, uint8_t& currentLevel);
+void startLivingRoomFan(float cyclePercent, bool& fanActive, uint8_t& currentLevel, unsigned long& fanStartTime);
+void startManualLivingRoomFan(bool& fanActive, bool& manualMode, uint8_t& currentLevel, unsigned long& fanStartTime);
+void stopLivingRoomFan(bool& fanActive, bool& manualMode, uint8_t& currentLevel);
+void logLivingRoomStatus(float cyclePercent, bool canRunAutomatic, uint8_t currentLevel);
+
 void setupVent() {
     pinMode(PIN_KOPALNICA_ODVOD, OUTPUT);
     pinMode(PIN_UTILITY_ODVOD, OUTPUT);
@@ -551,304 +565,294 @@ void controlLivingRoom() {
     static unsigned long fanStartTime = 0;
     static unsigned long lastOffTime = 0;
     static unsigned long lastCycleLog = 0;
-    static unsigned long lastCyclePercentUpdate = 0;
     static bool fanActive = false;
     static uint8_t currentLevel = 0;
     static bool manualMode = false;
     static bool isInitialized = false;
-    static float cyclePercent = settings.cycleActivePercentDS;
 
-    char logMessage[256];
     if (!isInitialized) {
         lastOffTime = millis();
         isInitialized = true;
     }
 
-    // Unified manual trigger handling
-    if (currentData.manualTriggerLivingRoom) {
-        bool canActivate = true;
-        const char* reason = "OK";
+    // Handle manual trigger
+    handleManualTriggerLivingRoom(fanActive, manualMode, fanStartTime, currentLevel);
 
-        if (currentData.disableLivingRoom) {
-            canActivate = false;
-            reason = "Living room disabled";
-        } else if (currentData.windowSensor1 || currentData.windowSensor2) {
-            canActivate = false;
-            reason = "Windows open";
-        } else if (timeSynced && isDNDTime() && !settings.dndAllowableManual) {
-            canActivate = false;
-            reason = "DND time active";
-        }
-
-        if (canActivate) {
-            // Stop any current fan
-            if (fanActive) {
-                digitalWrite(PIN_DNEVNI_VPIH, LOW);
-                digitalWrite(PIN_DNEVNI_ODVOD_1, LOW);
-                digitalWrite(PIN_DNEVNI_ODVOD_2, LOW);
-                digitalWrite(PIN_DNEVNI_ODVOD_3, LOW);
-            }
-            // Start manual mode
-            digitalWrite(PIN_DNEVNI_VPIH, HIGH);
-            digitalWrite(PIN_DNEVNI_ODVOD_2, HIGH);
-            fanActive = true;
-            manualMode = true;
-            fanStartTime = millis();
-            currentLevel = 2;
-            currentData.livingIntake = true;
-            currentData.livingExhaustLevel = 2;
-            unsigned long duration = settings.fanDuration * 2 * 1000;
-            if (timeSynced) {
-                currentData.offTimes[4] = myTZ.now() + duration / 1000;
-                currentData.offTimes[5] = currentData.offTimes[4];
-                time_t offTime = currentData.offTimes[4];
-                struct tm* tm = localtime(&offTime);
-                char offTimeStr[20];
-                strftime(offTimeStr, sizeof(offTimeStr), "%Y-%m-%d %H:%M:%S", tm);
-                LOG_INFO("DS Vent", "ON: Man Trigg via CYD, Trajanje: %u s, Izklop ob: %s", duration / 1000, offTimeStr);
-            } else {
-                currentData.offTimes[4] = 0;
-                currentData.offTimes[5] = 0;
-                LOG_INFO("DS Vent", "ON: Man Trigg via CYD, Trajanje: %u s", duration / 1000);
-            }
-        } else {
-            LOG_INFO("DS Vent", "Manual trigger ignored - %s", reason);
-        }
-
-        currentData.manualTriggerLivingRoom = false;
-    }
-
-    // Če ni NTP sinhronizacije - samo lokalni triggerji delujejo
+    // If no NTP sync, only manual mode works
     if (!timeSynced) {
-        // Handle timeout for active fans
-        if (fanActive && manualMode && (millis() - fanStartTime >= settings.fanDuration * 2 * 1000)) {
-            digitalWrite(PIN_DNEVNI_VPIH, LOW);
-            digitalWrite(PIN_DNEVNI_ODVOD_2, LOW);
-            fanActive = false;
-            manualMode = false;
-            currentLevel = 0;
-            currentData.livingIntake = false;
-            currentData.livingExhaustLevel = 0;
-            currentData.offTimes[4] = 0;
-            currentData.offTimes[5] = 0;
-            lastOffTime = millis();
-            snprintf(logMessage, sizeof(logMessage), "[DS Vent] OFF: Man cikel konec");
-            logEvent(logMessage);
-        }
-
-    // Handle window/open door disable
-        if ((currentData.windowSensor1 || currentData.windowSensor2) || currentData.disableLivingRoom) {
-            if (fanActive) {
-                digitalWrite(PIN_DNEVNI_VPIH, LOW);
-                digitalWrite(PIN_DNEVNI_ODVOD_1, LOW);
-                digitalWrite(PIN_DNEVNI_ODVOD_2, LOW);
-                digitalWrite(PIN_DNEVNI_ODVOD_3, LOW);
-                fanActive = false;
-                currentLevel = 0;
-                manualMode = false;
-                currentData.livingIntake = false;
-                currentData.livingExhaustLevel = 0;
-                currentData.offTimes[4] = 0;
-                currentData.offTimes[5] = 0;
-                lastOffTime = millis();
-                const char* reason = (!(currentData.windowSensor1 && currentData.windowSensor2)) ? "Okna" : "CYD";
-                snprintf(logMessage, sizeof(logMessage), "[DS Vent] OFF: Diss via %s", reason);
-                logEvent(logMessage);
-            }
-        }
+        handleManualTimeout(fanActive, manualMode, fanStartTime, currentLevel);
+        handleDisableConditions(fanActive, manualMode, currentLevel);
         return;
     }
 
+    // Check all preconditions for automatic operation
+    bool canRunAutomatic = checkAutomaticPreconditions();
+
+    // Calculate duty cycle if preconditions met
+    float cyclePercent = 0.0;
+    if (canRunAutomatic) {
+        cyclePercent = calculateDutyCycle();
+    }
+
+    // Handle cycle timing
+    handleCycleTiming(cyclePercent, canRunAutomatic, fanActive, manualMode, currentLevel, fanStartTime, lastOffTime);
+
+    // Log status every 5 minutes
+    if (millis() - lastCycleLog >= 300000) {
+        logLivingRoomStatus(cyclePercent, canRunAutomatic, currentLevel);
+        lastCycleLog = millis();
+    }
+}
+
+// Helper function: Check all preconditions for automatic DS ventilation
+bool checkAutomaticPreconditions() {
+    // Basic requirements
+    if (!timeSynced || !externalDataValid) return false;
+
+    // Disabled by user
+    if (currentData.disableLivingRoom) return false;
+
+    // Windows open
+    if (currentData.windowSensor1 || currentData.windowSensor2) return false;
+
+    // Time restrictions
     bool isDND = isDNDTime();
     bool isNND = isNNDTime();
+    if (isNND) return false;
+    if (isDND && !settings.dndAllowableAutomatic) return false;
+
+    return true;
+}
+
+// Helper function: Calculate duty cycle from sensor data
+float calculateDutyCycle() {
+    float cyclePercent = settings.cycleActivePercentDS;
+
+    // Humidity increments
+    if (currentData.livingHumidity >= settings.humThresholdDS) {
+        cyclePercent += settings.incrementPercentLowDS;
+    }
+    if (currentData.livingHumidity >= settings.humThresholdHighDS) {
+        cyclePercent += settings.incrementPercentHighDS;
+    }
+
+    // CO2 increments
+    if (currentData.livingCO2 >= settings.co2ThresholdLowDS) {
+        cyclePercent += settings.incrementPercentLowDS;
+    }
+    if (currentData.livingCO2 >= settings.co2ThresholdHighDS) {
+        cyclePercent += settings.incrementPercentHighDS;
+    }
+
+    // Temperature increment
+    bool isNND = isNNDTime();
+    if (!isNND && ((currentData.livingTemp > settings.tempIdealDS && currentData.externalTemp < currentData.livingTemp) ||
+                   (currentData.livingTemp < settings.tempIdealDS && currentData.externalTemp > currentData.livingTemp))) {
+        cyclePercent += settings.incrementPercentTempDS;
+    }
+
+    // Adverse conditions reduction
     bool adverseConditions = currentData.externalHumidity > settings.humExtremeHighDS ||
                             currentData.externalTemp > settings.tempExtremeHighDS ||
                             currentData.externalTemp < settings.tempExtremeLowDS;
-
-    if (millis() - lastCyclePercentUpdate >= 60000) {
-        cyclePercent = settings.cycleActivePercentDS;
-        bool highIncrement = false;
-        const char* reason = "aktiven";
-
-        if (currentData.livingHumidity >= settings.humThresholdDS) {
-            cyclePercent += settings.incrementPercentLowDS;
-            reason = "H_DS>humThresholdDS";
-        }
-        if (currentData.livingHumidity >= settings.humThresholdHighDS) {
-            cyclePercent += settings.incrementPercentHighDS;
-            highIncrement = true;
-            reason = "H_DS>humThresholdHighDS";
-        }
-        if (currentData.livingCO2 >= settings.co2ThresholdLowDS) {
-            cyclePercent += settings.incrementPercentLowDS;
-            reason = "CO2>co2ThresholdLowDS";
-        }
-        if (currentData.livingCO2 >= settings.co2ThresholdHighDS) {
-            cyclePercent += settings.incrementPercentHighDS;
-            highIncrement = true;
-            reason = "CO2>co2ThresholdHighDS";
-        }
-        if (!isNND && ((currentData.livingTemp > settings.tempIdealDS && currentData.externalTemp < currentData.livingTemp) ||
-                       (currentData.livingTemp < settings.tempIdealDS && currentData.externalTemp > currentData.livingTemp))) {
-            cyclePercent += settings.incrementPercentTempDS;
-            reason = "T_DS!=tempIdealDS";
-        }
-        if (adverseConditions) {
-            cyclePercent *= 0.5;
-            reason = "Hext>humExtremeHighDS";
-        }
-        if ((currentData.windowSensor1 || currentData.windowSensor2)) {
-            cyclePercent = 0.0;
-            reason = "Okna";
-        }
-        if (currentData.disableLivingRoom) {
-            cyclePercent = 0.0;
-            reason = "CYD";
-        }
-        if (isNND) {
-            cyclePercent = 0.0;
-            reason = "NND";
-        }
-        lastCyclePercentUpdate = millis();
-        currentData.livingRoomDutyCycle = cyclePercent; // Update global duty cycle
+    if (adverseConditions) {
+        cyclePercent *= 0.5;
     }
 
-    if (millis() - lastCycleLog >= 300000) {
-        const char* reason = "aktiven";
-        if ((currentData.windowSensor1 || currentData.windowSensor2)) reason = "Okna odprta";
-        else if (currentData.disableLivingRoom) reason = "CYD";
-        else if (isNND) reason = "NND";
-        snprintf(logMessage, sizeof(logMessage), "[DS] Cikel %.1f%%, %s, DND:%s, NND:%s, Stopnja:%d",
-                 cyclePercent, reason, isDND ? "DA" : "NE", isNND ? "DA" : "NE", currentLevel);
-        logEvent(logMessage);
-        lastCycleLog = millis();
+    // Cap at 100%
+    if (cyclePercent > 100.0) cyclePercent = 100.0;
+
+    // Update global duty cycle
+    currentData.livingRoomDutyCycle = cyclePercent;
+
+    return cyclePercent;
+}
+
+// Helper function: Handle cycle timing logic
+void handleCycleTiming(float cyclePercent, bool canRunAutomatic, bool& fanActive, bool& manualMode,
+                       uint8_t& currentLevel, unsigned long& fanStartTime, unsigned long& lastOffTime) {
+
+    // Handle manual mode timeout
+    if (fanActive && manualMode && (millis() - fanStartTime >= settings.fanDuration * 2 * 1000)) {
+        stopLivingRoomFan(fanActive, manualMode, currentLevel);
+        lastOffTime = millis();
+        LOG_INFO("DS Vent", "OFF: Manual cycle end");
+        return;
     }
 
-    if ((currentData.windowSensor1 || currentData.windowSensor2) || currentData.disableLivingRoom) {
+    // If manual mode active, don't interfere
+    if (manualMode) return;
+
+    // If cannot run automatic, ensure fan is off
+    if (!canRunAutomatic) {
         if (fanActive) {
-            digitalWrite(PIN_DNEVNI_VPIH, LOW);
-            digitalWrite(PIN_DNEVNI_ODVOD_1, LOW);
-            digitalWrite(PIN_DNEVNI_ODVOD_2, LOW);
-            digitalWrite(PIN_DNEVNI_ODVOD_3, LOW);
-            fanActive = false;
-            currentLevel = 0;
-            manualMode = false;
-            currentData.livingIntake = false;
-            currentData.livingExhaustLevel = 0;
-            currentData.offTimes[4] = 0;
-            currentData.offTimes[5] = 0;
+            stopLivingRoomFan(fanActive, manualMode, currentLevel);
             lastOffTime = millis();
-            const char* reason = ((currentData.windowSensor1 || currentData.windowSensor2)) ? "Okna" : "CYD";
-            snprintf(logMessage, sizeof(logMessage), "[DS Vent] OFF: Diss via %s", reason);
-            logEvent(logMessage);
+            LOG_INFO("DS Vent", "OFF: Automatic disabled");
         }
         return;
     }
 
-    bool reducedConditions = currentData.externalTemp < settings.tempLowThreshold;
-    static bool lastAdverseLogged = false;
-    if (lastSensorRead > 0 && adverseConditions && !lastAdverseLogged) {
-        snprintf(logMessage, sizeof(logMessage), "[DS Vent] OFF: Hext=%.1f%%>humExtremeHighDS=%.1f%%",
-                 currentData.externalHumidity, settings.humExtremeHighDS);
-        logEvent(logMessage);
-        lastAdverseLogged = true;
-    } else if (lastSensorRead > 0 && !adverseConditions && lastAdverseLogged) {
-        lastAdverseLogged = false;
-    }
-
-
-
-    if (fanActive && manualMode) {
-        if (millis() - fanStartTime >= settings.fanDuration * 2 * 1000) {
-            digitalWrite(PIN_DNEVNI_VPIH, LOW);
-            digitalWrite(PIN_DNEVNI_ODVOD_2, LOW);
-            fanActive = false;
-            manualMode = false;
-            currentLevel = 0;
-            currentData.livingIntake = false;
-            currentData.livingExhaustLevel = 0;
-            currentData.offTimes[4] = 0;
-            currentData.offTimes[5] = 0;
-            lastOffTime = millis();
-            snprintf(logMessage, sizeof(logMessage), "[DS Vent] OFF: Man cikel konec");
-            logEvent(logMessage);
-        }
-        return;
-    }
-
-    bool automaticAllowed = !isDND || settings.dndAllowableAutomatic;
-    if (!automaticAllowed || isNND) {
-        if (fanActive && !manualMode) {
-            digitalWrite(PIN_DNEVNI_VPIH, LOW);
-            digitalWrite(PIN_DNEVNI_ODVOD_1, LOW);
-            digitalWrite(PIN_DNEVNI_ODVOD_2, LOW);
-            digitalWrite(PIN_DNEVNI_ODVOD_3, LOW);
-            fanActive = false;
-            currentLevel = 0;
-            currentData.livingIntake = false;
-            currentData.livingExhaustLevel = 0;
-            currentData.offTimes[4] = 0;
-            currentData.offTimes[5] = 0;
-            lastOffTime = millis();
-            snprintf(logMessage, sizeof(logMessage), "[DS Vent] OFF: Auto cikel ustavljen (DND/NND)");
-            logEvent(logMessage);
-        }
-        return;
-    }
-
+    // Cycle timing
     unsigned long cycleDurationMs = settings.cycleDurationDS * 1000;
     unsigned long activeDurationMs = cycleDurationMs * (cyclePercent / 100.0);
     unsigned long inactiveDurationMs = cycleDurationMs - activeDurationMs;
 
-    if (!fanActive && millis() - lastOffTime >= inactiveDurationMs && externalDataValid) {
-        digitalWrite(PIN_DNEVNI_VPIH, HIGH);
-        digitalWrite(PIN_DNEVNI_ODVOD_1, LOW);
-        digitalWrite(PIN_DNEVNI_ODVOD_2, LOW);
-        digitalWrite(PIN_DNEVNI_ODVOD_3, LOW);
-        bool highIncrement = currentData.livingHumidity >= settings.humThresholdHighDS ||
-                             currentData.livingCO2 >= settings.co2ThresholdHighDS;
-        uint8_t newLevel = isDND ? 1 : (highIncrement ? 3 : 1);
-        if (newLevel == 1) digitalWrite(PIN_DNEVNI_ODVOD_1, HIGH);
-        else if (newLevel == 3) digitalWrite(PIN_DNEVNI_ODVOD_3, HIGH);
-        fanActive = true;
-        currentLevel = newLevel;
-        fanStartTime = millis();
-        currentData.livingIntake = true;
-        currentData.livingExhaustLevel = newLevel;
-        unsigned long duration = activeDurationMs;
+    // Time to start fan
+    if (!fanActive && millis() - lastOffTime >= inactiveDurationMs) {
+        startLivingRoomFan(cyclePercent, fanActive, currentLevel, fanStartTime);
+    }
+    // Time to stop fan
+    else if (fanActive && millis() - fanStartTime >= activeDurationMs) {
+        stopLivingRoomFan(fanActive, manualMode, currentLevel);
+        lastOffTime = millis();
+        LOG_INFO("DS Vent", "OFF: Auto cycle end");
+    }
+}
+
+// Helper function: Handle manual trigger
+void handleManualTriggerLivingRoom(bool& fanActive, bool& manualMode, unsigned long& fanStartTime, uint8_t& currentLevel) {
+    if (!currentData.manualTriggerLivingRoom) return;
+
+    bool canActivate = checkManualPreconditions();
+    if (!canActivate) {
+        LOG_INFO("DS Vent", "Manual trigger ignored - preconditions not met");
+        currentData.manualTriggerLivingRoom = false;
+        return;
+    }
+
+    // Stop any current operation
+    if (fanActive) {
+        stopLivingRoomFan(fanActive, manualMode, currentLevel);
+    }
+
+    // Start manual mode
+    startManualLivingRoomFan(fanActive, manualMode, currentLevel, fanStartTime);
+    currentData.manualTriggerLivingRoom = false;
+}
+
+// Helper function: Check preconditions for manual activation
+bool checkManualPreconditions() {
+    if (currentData.disableLivingRoom) return false;
+    if (currentData.windowSensor1 || currentData.windowSensor2) return false;
+    if (timeSynced && isDNDTime() && !settings.dndAllowableManual) return false;
+    return true;
+}
+
+// Helper function: Handle manual timeout when no NTP
+void handleManualTimeout(bool& fanActive, bool& manualMode, unsigned long fanStartTime, uint8_t& currentLevel) {
+    if (fanActive && manualMode && (millis() - fanStartTime >= settings.fanDuration * 2 * 1000)) {
+        stopLivingRoomFan(fanActive, manualMode, currentLevel);
+        LOG_INFO("DS Vent", "OFF: Manual cycle end (no NTP)");
+    }
+}
+
+// Helper function: Handle disable conditions
+void handleDisableConditions(bool& fanActive, bool& manualMode, uint8_t& currentLevel) {
+    if ((currentData.windowSensor1 || currentData.windowSensor2) || currentData.disableLivingRoom) {
+        if (fanActive) {
+            stopLivingRoomFan(fanActive, manualMode, currentLevel);
+            const char* reason = (currentData.windowSensor1 || currentData.windowSensor2) ? "Windows open" : "Disabled";
+            LOG_INFO("DS Vent", "OFF: %s", reason);
+        }
+    }
+}
+
+// Helper function: Start living room fan
+void startLivingRoomFan(float cyclePercent, bool& fanActive, uint8_t& currentLevel, unsigned long& fanStartTime) {
+    digitalWrite(PIN_DNEVNI_VPIH, HIGH);
+    digitalWrite(PIN_DNEVNI_ODVOD_1, LOW);
+    digitalWrite(PIN_DNEVNI_ODVOD_2, LOW);
+    digitalWrite(PIN_DNEVNI_ODVOD_3, LOW);
+
+    bool highIncrement = currentData.livingHumidity >= settings.humThresholdHighDS ||
+                         currentData.livingCO2 >= settings.co2ThresholdHighDS;
+    bool isDND = isDNDTime();
+    uint8_t newLevel = isDND ? 1 : (highIncrement ? 3 : 1);
+
+    if (newLevel == 1) digitalWrite(PIN_DNEVNI_ODVOD_1, HIGH);
+    else if (newLevel == 3) digitalWrite(PIN_DNEVNI_ODVOD_3, HIGH);
+
+    fanActive = true;
+    currentLevel = newLevel;
+    fanStartTime = millis();
+    currentData.livingIntake = true;
+    currentData.livingExhaustLevel = newLevel;
+
+    unsigned long cycleDurationMs = settings.cycleDurationDS * 1000;
+    unsigned long activeDurationMs = cycleDurationMs * (cyclePercent / 100.0);
+    currentData.offTimes[4] = myTZ.now() + activeDurationMs / 1000;
+    currentData.offTimes[5] = currentData.offTimes[4];
+
+    char reason[64];
+    if (highIncrement) {
+        if (currentData.livingHumidity >= settings.humThresholdHighDS) {
+            snprintf(reason, sizeof(reason), "H_DS=%.1f%%>humThresholdHighDS=%.1f%%", currentData.livingHumidity, settings.humThresholdHighDS);
+        } else {
+            snprintf(reason, sizeof(reason), "CO2=%.0f>co2ThresholdHighDS=%.0f", currentData.livingCO2, settings.co2ThresholdHighDS);
+        }
+    } else {
+        strcpy(reason, "Auto cycle");
+    }
+
+    LOG_INFO("DS Vent", "ON: %s, Level %d, Duration: %u s", reason, newLevel, activeDurationMs / 1000);
+}
+
+// Helper function: Start manual living room fan
+void startManualLivingRoomFan(bool& fanActive, bool& manualMode, uint8_t& currentLevel, unsigned long& fanStartTime) {
+    digitalWrite(PIN_DNEVNI_VPIH, HIGH);
+    digitalWrite(PIN_DNEVNI_ODVOD_2, HIGH);
+    fanActive = true;
+    manualMode = true;
+    currentLevel = 2;
+    fanStartTime = millis();
+    currentData.livingIntake = true;
+    currentData.livingExhaustLevel = 2;
+
+    unsigned long duration = settings.fanDuration * 2 * 1000;
+    if (timeSynced) {
         currentData.offTimes[4] = myTZ.now() + duration / 1000;
         currentData.offTimes[5] = currentData.offTimes[4];
-        time_t offTime = currentData.offTimes[4];
-        struct tm* tm = localtime(&offTime);
-        char offTimeStr[20];
-        strftime(offTimeStr, sizeof(offTimeStr), "%Y-%m-%d %H:%M:%S", tm);
-        char reason[64];
-        if (highIncrement) {
-            if (currentData.livingHumidity >= settings.humThresholdHighDS) {
-                snprintf(reason, sizeof(reason), "H_DS=%.1f%%>humThresholdHighDS=%.1f%%", currentData.livingHumidity, settings.humThresholdHighDS);
-            } else {
-                snprintf(reason, sizeof(reason), "CO2=%.0f>co2ThresholdHighDS=%.0f", currentData.livingCO2, settings.co2ThresholdHighDS);
-            }
-        } else {
-            strcpy(reason, "Auto cikel");
-        }
-        snprintf(logMessage, sizeof(logMessage), "[DS Vent] ON: %s, Stopnja %d, Trajanje: %u s, Izklop ob: %s", reason, newLevel, duration / 1000, offTimeStr);
-        logEvent(logMessage);
-    } else if (fanActive && millis() - fanStartTime >= activeDurationMs) {
-        digitalWrite(PIN_DNEVNI_VPIH, LOW);
-        digitalWrite(PIN_DNEVNI_ODVOD_1, LOW);
-        digitalWrite(PIN_DNEVNI_ODVOD_2, LOW);
-        digitalWrite(PIN_DNEVNI_ODVOD_3, LOW);
-        fanActive = false;
-        currentLevel = 0;
-        currentData.livingIntake = false;
-        currentData.livingExhaustLevel = 0;
+    } else {
         currentData.offTimes[4] = 0;
         currentData.offTimes[5] = 0;
-        lastOffTime = millis();
-        snprintf(logMessage, sizeof(logMessage), "[DS Vent] OFF: Auto cikel konec");
-        logEvent(logMessage);
     }
+
+    LOG_INFO("DS Vent", "ON: Manual trigger, Duration: %u s", duration / 1000);
+}
+
+// Helper function: Stop living room fan
+void stopLivingRoomFan(bool& fanActive, bool& manualMode, uint8_t& currentLevel) {
+    digitalWrite(PIN_DNEVNI_VPIH, LOW);
+    digitalWrite(PIN_DNEVNI_ODVOD_1, LOW);
+    digitalWrite(PIN_DNEVNI_ODVOD_2, LOW);
+    digitalWrite(PIN_DNEVNI_ODVOD_3, LOW);
+    fanActive = false;
+    manualMode = false;
+    currentLevel = 0;
+    currentData.livingIntake = false;
+    currentData.livingExhaustLevel = 0;
+    currentData.offTimes[4] = 0;
+    currentData.offTimes[5] = 0;
+}
+
+// Helper function: Log living room status
+void logLivingRoomStatus(float cyclePercent, bool canRunAutomatic, uint8_t currentLevel) {
+    bool isDND = isDNDTime();
+    bool isNND = isNNDTime();
+
+    const char* status = "OK";
+    if (!canRunAutomatic) {
+        if (!timeSynced) status = "No NTP";
+        else if (!externalDataValid) status = "No sensor data";
+        else if (currentData.disableLivingRoom) status = "Disabled";
+        else if (currentData.windowSensor1 || currentData.windowSensor2) status = "Windows open";
+        else if (isNND) status = "NND";
+        else if (isDND && !settings.dndAllowableAutomatic) status = "DND";
+    }
+
+    LOG_INFO("DS", "Cycle: %.1f%%, Status: %s, DND:%s, NND:%s, Level:%d",
+             cyclePercent, status, isDND ? "YES" : "NO", isNND ? "YES" : "NO", currentLevel);
 }
 
 void calculatePower() {

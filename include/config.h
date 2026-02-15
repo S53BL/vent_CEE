@@ -147,6 +147,7 @@ struct ExternalData {
     float livingHumidityDS;
     uint16_t livingCO2;
     int weatherIcon;
+    int seasonCode;
     uint32_t timestamp;
 };
 struct CurrentData {

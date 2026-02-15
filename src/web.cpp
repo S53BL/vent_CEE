@@ -177,6 +177,7 @@ void handleSensorData(AsyncWebServerRequest *request, uint8_t *data, size_t len,
         externalData.livingHumidityDS = doc[FIELD_DS_HUM] | 0.0f;       // ds humidity
         externalData.livingCO2 = doc[FIELD_DS_CO2] | 0;                 // ds CO2
         externalData.weatherIcon = doc[FIELD_WEATHER_ICON] | 0;          // weather icon
+        externalData.seasonCode = doc[FIELD_SEASON_CODE] | 0;            // season code
         externalData.timestamp = doc[FIELD_TIMESTAMP] | 0;                 // timestamp
 
         // Update currentData for immediate use by vent control logic
@@ -187,8 +188,9 @@ void handleSensorData(AsyncWebServerRequest *request, uint8_t *data, size_t len,
         currentData.livingHumidity = externalData.livingHumidityDS;
         currentData.livingCO2 = externalData.livingCO2;
 
-        // Update weather icon
+        // Update weather icon and season code
         currentWeatherIcon = externalData.weatherIcon;
+        currentSeasonCode = externalData.seasonCode;
 
         // Update external data validation
         if (timeSynced) {
@@ -196,8 +198,10 @@ void handleSensorData(AsyncWebServerRequest *request, uint8_t *data, size_t len,
             externalDataValid = true;
         }
 
-        LOG_INFO("HTTP", "SENSOR_DATA: Received - Temp: %.1f°C, Hum: %.1f%%, CO2: %d, internal updated",
-                 externalData.externalTemperature, externalData.externalHumidity, externalData.livingCO2);
+        LOG_INFO("HTTP", "SENSOR_DATA: Received - Ext: %.1f°C/%.1f%%/%.1fhPa, DS: %.1f°C/%.1f%%/%dppm, Icon: %d, Season: %d, TS: %u",
+                 externalData.externalTemperature, externalData.externalHumidity, externalData.externalPressure,
+                 externalData.livingTempDS, externalData.livingHumidityDS, externalData.livingCO2,
+                 externalData.weatherIcon, externalData.seasonCode, externalData.timestamp);
 
         // Reactivate REW if it was offline
         String clientIP = request->client()->remoteIP().toString();

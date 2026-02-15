@@ -117,6 +117,7 @@ bool sendDewUpdate(const char* room) {
         doc["dh"] = currentData.utilityHumidity;           // dew hum
         doc["de"] = currentData.errorFlags & ERR_SHT41 ? 1 : 0;  // dew err
         doc["wi"] = currentWeatherIcon;                    // weather icon
+        doc["ss"] = currentSeasonCode;                     // season code
     } else if (strcmp(room, "KOP") == 0) {
         doc["df"] = currentData.bathroomFan ? 1 : 0;       // dew fan
         doc["do"] = currentData.offTimes[0];               // dew off (timestamp)
@@ -124,6 +125,7 @@ bool sendDewUpdate(const char* room) {
         doc["dh"] = currentData.bathroomHumidity;          // dew hum
         doc["de"] = currentData.errorFlags & ERR_BME280 ? 1 : 0; // dew err
         doc["wi"] = currentWeatherIcon;                    // weather icon
+        doc["ss"] = currentSeasonCode;                     // season code
     }
 
     String jsonString;

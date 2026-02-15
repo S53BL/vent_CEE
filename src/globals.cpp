@@ -26,6 +26,7 @@ ExternalData externalData;
 Settings settings;
 CurrentData currentData;
 int currentWeatherIcon = 0;
+int currentSeasonCode = 0;
 
 Adafruit_BME280 *bme280 = nullptr;
 Adafruit_SHT4x *sht41 = nullptr;

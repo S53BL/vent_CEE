@@ -49,6 +49,7 @@
 #define FIELD_DEW_HUM             "dh"    // dew_humidity
 #define FIELD_DEW_ERROR           "de"    // dew_error
 #define FIELD_WEATHER_ICON        "wi"    // weather_icon
+#define FIELD_SEASON_CODE         "ss"    // season_code
 
 // SENSOR_DATA field names (REW → CEE)
 #define FIELD_EXT_TEMP            "et"    // external_temperature
