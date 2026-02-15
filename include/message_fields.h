@@ -59,6 +59,7 @@
 #define FIELD_DS_HUM              "dh"    // ds_humidity
 #define FIELD_DS_CO2              "dc"    // ds_co2
 #define FIELD_WEATHER_ICON        "wi"    // weather_icon
+#define FIELD_SEASON_CODE         "ss"    // season_code
 #define FIELD_TIMESTAMP           "ts"    // timestamp
 
 // MANUAL_CONTROL field names (REW → CEE)

@@ -41,6 +41,16 @@ String getWindowStatus() {
     return (currentData.windowSensor1 || currentData.windowSensor2) ? "Odprta" : "Zaprta";
 }
 
+String getSeasonName() {
+    switch (currentSeasonCode) {
+        case 0: return "Pomlad";
+        case 1: return "Poletje";
+        case 2: return "Jesen";
+        case 3: return "Zima";
+        default: return "Neznano";
+    }
+}
+
 String getErrorDescription(uint8_t errorFlags) {
     String errors = "";
     if (errorFlags & ERR_BME280) errors += "Senzor BME280 nedelujoč<br>";
@@ -1250,11 +1260,11 @@ const char* HTML_SETTINGS_SENSOR_OFFSETS = R"rawliteral(
     <div id="message" class="message" style="display: none;"></div>
 
     <form class="settings-form" id="settingsForm">
-                <div class="form-group">
-                    <label for="humExtremeHighDS">Prag za zmanjšanje cikla pri ekstremno visoki zunanji vlagi</label>
-                    <input type="number" name="humExtremeHighDS" id="humExtremeHighDS" step="1" min="0" max="100">
-                    <div class="description">Zunanja vlaga, pri kateri se cikel prezračevanja zmanjša, da se izogne vnosu dodatne vlage. Če zunaj vlage ne želite vnašati, dvignite na 75 % (0–100 %).</div>
-                </div>
+        <div class="form-group">
+            <label for="bmeTempOffset">Offset temperature BME280 (°C)</label>
+            <input type="number" id="bmeTempOffset" name="bmeTempOffset" step="0.1" min="-10.0" max="10.0" required>
+            <div class="description">Prilagoditev temperature BME280 senzorja (-10.0 do +10.0 °C)</div>
+        </div>
 
         <div class="form-group">
             <label for="bmeHumidityOffset">Offset vlažnosti BME280 (%)</label>
@@ -1690,6 +1700,10 @@ void handleRoot(AsyncWebServerRequest *request) {
             <div class="status-item">
                 <span class="status-label">Ikona:</span>
                 <span class="status-value" id="ext-weather-icon">)rawliteral" + String(currentWeatherIcon) + R"rawliteral(</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Sezona:</span>
+                <span class="status-value" id="ext-season">)rawliteral" + getSeasonName() + R"rawliteral(</span>
             </div>
             <div class="status-item">
                 <span class="status-label">DND:</span>
@@ -2136,9 +2150,14 @@ void handlePostSettings(AsyncWebServerRequest *request) {
   saveSettings();
   uint16_t new_crc = calculateCRC((const uint8_t*)&settings, sizeof(Settings));
 
-  LOG_INFO("Web", "Shranjene vrednosti: humThreshold=%.1f, fanDuration=%d, tempLowThreshold=%.1f, cycleDurationDS=%d, humThresholdDS=%.1f, co2ThresholdLowDS=%d, tempIdealDS=%.1f CRC=%04X",
-           settings.humThreshold, settings.fanDuration, settings.tempLowThreshold, settings.cycleDurationDS,
-           settings.humThresholdDS, settings.co2ThresholdLowDS, settings.tempIdealDS, new_crc);
+  LOG_INFO("Web", "Shranjene vrednosti: humThreshold=%.1f, fanDuration=%d, fanOffDuration=%d, fanOffDurationKop=%d, tempLowThreshold=%.1f, tempMinThreshold=%.1f, dndAuto=%d, dndSemi=%d, dndMan=%d, cycleDurationDS=%d, cycleActivePercentDS=%.1f, humThresholdDS=%.1f, humThresholdHighDS=%.1f, humExtremeHighDS=%.1f, co2ThresholdLowDS=%d, co2ThresholdHighDS=%d, incLowDS=%.1f, incHighDS=%.1f, incTempDS=%.1f, tempIdealDS=%.1f, tempExtremeHighDS=%.1f, tempExtremeLowDS=%.1f, bmeTempOff=%.2f, bmeHumOff=%.2f, bmePressOff=%.2f, shtTempOff=%.2f, shtHumOff=%.2f CRC=%04X",
+           settings.humThreshold, settings.fanDuration, settings.fanOffDuration, settings.fanOffDurationKop,
+           settings.tempLowThreshold, settings.tempMinThreshold, settings.dndAllowableAutomatic, settings.dndAllowableSemiautomatic, settings.dndAllowableManual,
+           settings.cycleDurationDS, settings.cycleActivePercentDS, settings.humThresholdDS, settings.humThresholdHighDS, settings.humExtremeHighDS,
+           settings.co2ThresholdLowDS, settings.co2ThresholdHighDS, settings.incrementPercentLowDS, settings.incrementPercentHighDS, settings.incrementPercentTempDS,
+           settings.tempIdealDS, settings.tempExtremeHighDS, settings.tempExtremeLowDS,
+           settings.bmeTempOffset, settings.bmeHumidityOffset, settings.bmePressureOffset,
+           settings.shtTempOffset, settings.shtHumidityOffset, new_crc);
 
   settingsUpdateSuccess = true;
   settingsUpdateMessage = "Nastavitve shranjene!";
