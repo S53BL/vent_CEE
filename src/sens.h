@@ -18,6 +18,6 @@ void performPeriodicI2CReset();
 void setupInputs();
 void readInputs();
 
-int determineCycleMode();
+int determineCycleMode(float int_temp, float int_hum, uint8_t sensor_err_flag);
 
 #endif // SENS_H

@@ -194,7 +194,7 @@ void controlUtility() {
         float prev_rate = (utility_hum_history[8] - utility_hum_history[7]) / 1.0;
         bool stabilizing = (abs(rate) < 0.1 && abs(prev_rate) < 0.1);
         if (trend > 10.0 && utility_hum_history[9] > utility_baseline_hum + 10.0 && stabilizing) {
-            int mode = determineCycleMode();
+            int mode = determineCycleMode(currentData.utilityTemp, currentData.utilityHumidity, ERR_SHT41);
             if (mode > 0) {
                 utility_drying_mode = true;
                 utility_cycle_mode = mode;
@@ -480,7 +480,7 @@ void controlBathroom() {
     if (!drying_mode && cycle_mode == 0) {
         float trend = hum_history[2] - hum_history[0];
         if (trend > 10.0 && hum_history[2] > baseline_hum + 10.0) {
-            int mode = determineCycleMode();
+            int mode = determineCycleMode(currentData.bathroomTemp, currentData.bathroomHumidity, ERR_BME280);
             if (mode > 0) {
                 drying_mode = true;
                 cycle_mode = mode;
