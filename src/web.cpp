@@ -192,6 +192,18 @@ void handleManualControl(AsyncWebServerRequest *request, uint8_t *data, size_t l
                 request->send(400, "application/json", "{\"status\":\"ERROR\",\"message\":\"Unknown room\"}");
                 return;
             }
+        } else if (action == "drying") {
+            if (room == "ut") {
+                currentData.manualTriggerUtilityDrying = true;
+                LOG_INFO("HTTP", "MANUAL_CONTROL: request received - Utility drying mode triggered");
+            } else if (room == "kop") {
+                currentData.manualTriggerBathroomDrying = true;
+                LOG_INFO("HTTP", "MANUAL_CONTROL: request received - Bathroom drying mode triggered");
+            } else {
+                LOG_ERROR("HTTP", "Unknown room for drying action: %s", room.c_str());
+                request->send(400, "application/json", "{\"status\":\"ERROR\",\"message\":\"Unknown room for drying action\"}");
+                return;
+            }
         } else {
             LOG_ERROR("HTTP", "Unknown action: %s", action.c_str());
             request->send(400, "application/json", "{\"status\":\"ERROR\",\"message\":\"Unknown action\"}");
@@ -383,6 +395,12 @@ const char* HTML_SETTINGS = R"rawliteral(
         }
         .right-sidebar .reset-button:hover {
             background-color: #e69500;
+        }
+        .right-sidebar .factory-reset-button {
+            background-color: #ff4444;
+        }
+        .right-sidebar .factory-reset-button:hover {
+            background-color: #cc3333;
         }
         h1 {
             text-align: center;
@@ -783,6 +801,10 @@ const char* HTML_SETTINGS = R"rawliteral(
         <h2>Akcije</h2>
         <button type="button" class="action-button save-button" onclick="saveSettings()">Shrani</button>
         <button type="button" class="action-button reset-button" onclick="resetToDefaults()">Ponastavi</button>
+
+        <div style="margin-top: 40px; padding-top: 20px; border-top: 2px solid #ff4444;">
+            <button type="button" class="action-button factory-reset-button" onclick="resetToFactoryDefaults()">Reset na tovarniške nastavitve</button>
+        </div>
     </div>
     <div id="Help" class="tabcontent">
         <div class="form-container">
@@ -1070,6 +1092,28 @@ const char* HTML_SETTINGS = R"rawliteral(
             });
         }
 
+        function resetToFactoryDefaults() {
+            if (confirm('Ali ste prepričani da želite ponastaviti na tovarniške nastavitve?')) {
+                if (confirm('Te operacije ni mogoče preklicati.')) {
+                    fetch('/settings/factory-reset', {
+                        method: 'POST'
+                    })
+                    .then(response => response.json())
+                    .then(result => {
+                        if (result.success) {
+                            showMessage(result.message, 'success');
+                            updateSettings(); // Reload current values
+                        } else {
+                            showMessage(result.error || 'Napaka pri resetu', 'error');
+                        }
+                    })
+                    .catch(error => {
+                        showMessage('Napaka pri resetu: ' + error, 'error');
+                    });
+                }
+            }
+        }
+
         loadCurrentSettings();
     </script>
 </body>
@@ -1291,6 +1335,9 @@ void handleRoot(AsyncWebServerRequest *request) {
                 <span class="status-label">Expected end:</span>
                 <span class="status-value" id="kop-expected-end">)rawliteral" + (currentData.bathroomDryingMode ? String(currentData.bathroomExpectedEndTime) : "N/A") + R"rawliteral(</span>
             </div>
+            <div class="status-item">
+                <button onclick="triggerDrying('kop')" style="padding: 5px 10px; background-color: #4da6ff; color: white; border: none; border-radius: 4px; cursor: pointer;">Start Drying Cycle</button>
+            </div>
         </div>
 
         <!-- UT Card -->
@@ -1331,6 +1378,9 @@ void handleRoot(AsyncWebServerRequest *request) {
             <div class="status-item">
                 <span class="status-label">Expected end:</span>
                 <span class="status-value" id="ut-expected-end">)rawliteral" + (currentData.utilityDryingMode ? String(currentData.utilityExpectedEndTime) : "N/A") + R"rawliteral(</span>
+            </div>
+            <div class="status-item">
+                <button onclick="triggerDrying('ut')" style="padding: 5px 10px; background-color: #4da6ff; color: white; border: none; border-radius: 4px; cursor: pointer;">Start Drying Cycle</button>
             </div>
         </div>
 
@@ -1532,7 +1582,16 @@ void handleRoot(AsyncWebServerRequest *request) {
                     document.getElementById("kop-remaining").textContent = data.bathroom_remaining + " s";
                     document.getElementById("kop-drying-mode").textContent = data.bathroom_drying_mode ? "DA" : "NE";
                     document.getElementById("kop-cycle-mode").textContent = data.bathroom_cycle_mode;
-                    document.getElementById("kop-expected-end").textContent = data.bathroom_expected_end_time;
+                    // Format expected end time as HH:MM:SS
+                    if (data.bathroom_expected_end_time && data.bathroom_expected_end_time > 0) {
+                        const expectedDate = new Date(data.bathroom_expected_end_time * 1000);
+                        const hours = expectedDate.getHours().toString().padStart(2, '0');
+                        const minutes = expectedDate.getMinutes().toString().padStart(2, '0');
+                        const seconds = expectedDate.getSeconds().toString().padStart(2, '0');
+                        document.getElementById("kop-expected-end").textContent = `${hours}:${minutes}:${seconds}`;
+                    } else {
+                        document.getElementById("kop-expected-end").textContent = "N/A";
+                    }
 
                     // Update UT data
                     document.getElementById("ut-temp").textContent = data.utility_temp + " °C";
@@ -1543,7 +1602,16 @@ void handleRoot(AsyncWebServerRequest *request) {
                     document.getElementById("ut-remaining").textContent = data.utility_remaining + " s";
                     document.getElementById("ut-drying-mode").textContent = data.utility_drying_mode ? "DA" : "NE";
                     document.getElementById("ut-cycle-mode").textContent = data.utility_cycle_mode;
-                    document.getElementById("ut-expected-end").textContent = data.utility_expected_end_time;
+                    // Format expected end time as HH:MM:SS for UT
+                    if (data.utility_expected_end_time && data.utility_expected_end_time > 0) {
+                        const expectedDate = new Date(data.utility_expected_end_time * 1000);
+                        const hours = expectedDate.getHours().toString().padStart(2, '0');
+                        const minutes = expectedDate.getMinutes().toString().padStart(2, '0');
+                        const seconds = expectedDate.getSeconds().toString().padStart(2, '0');
+                        document.getElementById("ut-expected-end").textContent = `${hours}:${minutes}:${seconds}`;
+                    } else {
+                        document.getElementById("ut-expected-end").textContent = "N/A";
+                    }
 
                     // Update DS data
                     document.getElementById("ds-temp").textContent = data.living_temp + " °C";
@@ -1584,6 +1652,27 @@ void handleRoot(AsyncWebServerRequest *request) {
                     document.getElementById("status-kop-dew").textContent = data.kop_dew_online ? "ONLINE" : "OFFLINE";
                 })
                 .catch(error => console.error('Napaka pri osveževanju:', error));
+        }
+
+        function triggerDrying(room) {
+            fetch('/api/manual-control', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ room: room, action: 'drying' })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'OK') {
+                    console.log('Drying cycle triggered for ' + room);
+                } else {
+                    console.error('Error triggering drying cycle:', data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+            });
         }
 
         function getErrorDescription(errorFlags) {
@@ -1906,6 +1995,24 @@ void handleResetSettings(AsyncWebServerRequest *request) {
   request->send(200, "application/json", response);
 }
 
+void handleFactoryResetSettings(AsyncWebServerRequest *request) {
+  LOG_DEBUG("Web", "Zahtevek: POST /settings/factory-reset");
+
+  LOG_INFO("Web", "Reset na tovarniške nastavitve");
+  initDefaults();
+  saveSettings();
+  settingsUpdateSuccess = true;
+  settingsUpdateMessage = "Reset na tovarniške nastavitve uspešen!";
+  settingsUpdatePending = false;
+
+  DynamicJsonDocument doc(256);
+  doc["success"] = true;
+  doc["message"] = "Reset na tovarniške nastavitve uspešen!";
+  String response;
+  serializeJson(doc, response);
+  request->send(200, "application/json", response);
+}
+
 void handleSettingsStatus(AsyncWebServerRequest *request) {
   LOG_DEBUG("Web", "Zahtevek: GET /settings/status");
   DynamicJsonDocument doc(200);
@@ -1932,6 +2039,7 @@ void setupWebServer() {
   server.on("/current-data", HTTP_GET, handleCurrentDataRequest);
   server.on("/settings/update", HTTP_POST, handlePostSettings);
   server.on("/settings/reset", HTTP_POST, handleResetSettings);
+  server.on("/settings/factory-reset", HTTP_POST, handleFactoryResetSettings);
   server.on("/settings/status", HTTP_GET, handleSettingsStatus);
 
 

@@ -189,6 +189,32 @@ void controlUtility() {
 
     // Čakanje na trigger
     if (!utility_drying_mode && utility_cycle_mode == 0) {
+        // Check for manual drying trigger
+        if (currentData.manualTriggerUtilityDrying) {
+            int mode = determineCycleMode(currentData.utilityTemp, currentData.utilityHumidity, ERR_SHT41);
+            if (mode > 0) {
+                utility_drying_mode = true;
+                utility_cycle_mode = mode;
+                utility_burst_count = 0;
+                // Calculate expected end time once at trigger
+                time_t now = myTZ.now();
+                unsigned long total_seconds = (3 * (base_fan_duration_UT * (mode == 1 ? 1.0 : mode == 2 ? 0.6 : 0.3) / 1000)) + (2 * (settings.fanOffDuration * (mode == 1 ? 1.0 : mode == 2 ? 1.5 : 2.0) * 1000 / 1000));
+                expected_end_timeUT = now + total_seconds;
+                char expectedTimeStr[20];
+                strftime(expectedTimeStr, sizeof(expectedTimeStr), "%H:%M:%S", localtime(&expected_end_timeUT));
+                char logMessage[256];
+                snprintf(logMessage, sizeof(logMessage), "[UT Vent] Manual drying trigger: Mode=%d End: %s", mode, expectedTimeStr);
+                logEvent(logMessage);
+            } else {
+                char logMessage[256];
+                snprintf(logMessage, sizeof(logMessage), "[UT Vent] Manual drying trigger blocked: Mode=%d", mode);
+                logEvent(logMessage);
+            }
+            currentData.manualTriggerUtilityDrying = false;
+            return;
+        }
+
+        // Original automatic trigger
         float trend = utility_hum_history[9] - utility_hum_history[0];
         float rate = (utility_hum_history[9] - utility_hum_history[8]) / 1.0; // %/min
         float prev_rate = (utility_hum_history[8] - utility_hum_history[7]) / 1.0;
@@ -217,27 +243,7 @@ void controlUtility() {
     unsigned long fan_duration = base_fan_duration_UT * duration_factor; // ms // specifično za UT
     unsigned long fan_off_duration = settings.fanOffDuration * off_factor * 1000; // iz settings
 
-    // Izračun expected end samo če smo v drying mode
-    static time_t previous_expected_end_timeUT = 0;
-    if (utility_drying_mode && utility_cycle_mode >= 1 && utility_cycle_mode <= 3) {
-        time_t now = myTZ.now();
-        unsigned long total_seconds = (3 * (fan_duration / 1000)) + (2 * (fan_off_duration / 1000));
-        expected_end_timeUT = now + total_seconds;
-
-        // Log samo ob spremembi
-        if (expected_end_timeUT != previous_expected_end_timeUT) {
-            char logMessage[256];
-            snprintf(logMessage, sizeof(logMessage), "[UT Vent] Expected end: %lu (unixtime)", expected_end_timeUT);
-            logEvent(logMessage);
-            previous_expected_end_timeUT = expected_end_timeUT;
-        }
-    } else {
-        // Če nismo v drying mode, nastavi na 0
-        if (expected_end_timeUT != 0) {
-            expected_end_timeUT = 0;
-            previous_expected_end_timeUT = 0;
-        }
-    }
+    // Expected end time is calculated once at trigger, just copy to currentData
 
     static unsigned long burst_start = 0;
     static unsigned long off_start = 0;
@@ -274,7 +280,7 @@ void controlUtility() {
             float rate2 = (utility_hum_history[8] - utility_hum_history[7]) / 1.0;
             float rate3 = (utility_hum_history[7] - utility_hum_history[6]) / 1.0;
             float avg_rate = (rate1 + rate2 + rate3) / 3.0;
-            if (currentData.utilityHumidity > 65.0 && utility_burst_count < 3) {
+            if (currentData.utilityHumidity > settings.humThreshold && utility_burst_count < 3) {
                 // Prilagodi off
                 if (avg_rate > 1.0) {
                     fan_off_duration *= 1.2;
@@ -287,6 +293,7 @@ void controlUtility() {
                 utility_drying_mode = false;
                 utility_cycle_mode = 0;
                 utility_burst_count = 0;
+                expected_end_timeUT = 0; // Reset na 0 ko se cikel konča
                 // Reset baseline
                 utility_baseline_hum = 0;
                 for (int i = 0; i < 10; i++) {
@@ -478,6 +485,33 @@ void controlBathroom() {
 
     // Čakanje na trigger
     if (!drying_mode && cycle_mode == 0) {
+        // Check for manual drying trigger
+        if (currentData.manualTriggerBathroomDrying) {
+            int mode = determineCycleMode(currentData.bathroomTemp, currentData.bathroomHumidity, ERR_BME280);
+            if (mode > 0) {
+                drying_mode = true;
+                cycle_mode = mode;
+                burst_count = 0;
+                // Calculate expected end time
+                time_t now = myTZ.now();
+                unsigned long total_seconds = (3 * (360 * (cycle_mode == 1 ? 1.0 : cycle_mode == 2 ? 0.8 : 0.5) * 1000 / 1000)) + (2 * (settings.fanOffDurationKop * 1000 / 1000));
+                time_t expected_end = now + total_seconds;
+                expected_end_timeKOP = expected_end;
+                char expectedTimeStr[20];
+                strftime(expectedTimeStr, sizeof(expectedTimeStr), "%H:%M:%S", localtime(&expected_end));
+                char logMessage[256];
+                snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Manual drying trigger: Mode=%d End: %s", mode, expectedTimeStr);
+                logEvent(logMessage);
+            } else {
+                char logMessage[256];
+                snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Manual drying trigger blocked: Mode=%d", mode);
+                logEvent(logMessage);
+            }
+            currentData.manualTriggerBathroomDrying = false;
+            return;
+        }
+
+        // Original automatic trigger
         float trend = hum_history[2] - hum_history[0];
         if (trend > 10.0 && hum_history[2] > baseline_hum + 10.0) {
             int mode = determineCycleMode(currentData.bathroomTemp, currentData.bathroomHumidity, ERR_BME280);
@@ -501,27 +535,7 @@ void controlBathroom() {
     unsigned long fan_duration = 360 * duration_factor * 1000; // ms  // specifično za KOP
     unsigned long fan_off_duration = settings.fanOffDurationKop * 1000; // iz settings, brez faktorja
 
-    // Izračun expected end samo če smo v drying mode
-    static time_t previous_expected_end_timeKOP = 0;
-    if (drying_mode && cycle_mode >= 1 && cycle_mode <= 3) {
-        time_t now = myTZ.now();
-        unsigned long total_seconds = (3 * (fan_duration / 1000)) + (2 * (fan_off_duration / 1000));
-        expected_end_timeKOP = now + total_seconds;
-
-        // Log samo ob spremembi
-        if (expected_end_timeKOP != previous_expected_end_timeKOP) {
-            char logMessage[256];
-            snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Expected end: %lu (unixtime)", expected_end_timeKOP);
-            logEvent(logMessage);
-            previous_expected_end_timeKOP = expected_end_timeKOP;
-        }
-    } else {
-        // Če nismo v drying mode, nastavi na 0
-        if (expected_end_timeKOP != 0) {
-            expected_end_timeKOP = 0;
-            previous_expected_end_timeKOP = 0;
-        }
-    }
+    // Expected end time is calculated once at trigger, just copy to currentData
 
     static unsigned long burst_start = 0;
     static unsigned long off_start = 0;
@@ -560,7 +574,7 @@ void controlBathroom() {
             float rate1 = (hum_history[2] - hum_history[1]) / 1.0;
             float rate2 = (hum_history[1] - hum_history[0]) / 1.0;
             float avg_rate = (rate1 + rate2) / 2.0; // samo 2 rate za 3 branja
-            if (currentData.bathroomHumidity > 65.0 && burst_count < 3) {
+            if (currentData.bathroomHumidity > settings.humThreshold && burst_count < 3) {
                 // Prilagodi off
                 if (avg_rate > 1.0) {
                     fan_off_duration *= 1.2;
@@ -573,6 +587,7 @@ void controlBathroom() {
                 drying_mode = false;
                 cycle_mode = 0;
                 burst_count = 0;
+                expected_end_timeKOP = 0; // Reset na 0 ko se cikel konča
                 // Reset baseline in history
                 baseline_hum = 45.0;
                 hum_history[0] = 45.0;

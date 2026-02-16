@@ -68,28 +68,29 @@ void hexdumpCRCData(const uint8_t* data, size_t len, const char* label) {
 }
 
 void initDefaults() {
-  settings.humThreshold = 60.0f;
+  // Tovarniške nastavitve - prenešene iz config.h za poenostavitev vzdrževanja
+  settings.humThreshold = 65.0f;
   settings.fanDuration = 180;
-  settings.fanOffDuration = 1200;
-  settings.fanOffDurationKop = 1200;
+  settings.fanOffDuration = 1800;
+  settings.fanOffDurationKop = 180;
   settings.tempLowThreshold = 5.0f;
   settings.tempMinThreshold = -10.0f;
-  settings.dndAllowableAutomatic = false;
-  settings.dndAllowableSemiautomatic = false;
+  settings.dndAllowableAutomatic = true;
+  settings.dndAllowableSemiautomatic = true;
   settings.dndAllowableManual = true;
-  settings.cycleDurationDS = 60;
-  settings.cycleActivePercentDS = 30.0f;
+  settings.cycleDurationDS = 2000;
+  settings.cycleActivePercentDS = 9.0f;
   settings.humThresholdDS = 60.0f;
   settings.humThresholdHighDS = 70.0f;
   settings.co2ThresholdLowDS = 900;
   settings.co2ThresholdHighDS = 1200;
-  settings.incrementPercentLowDS = 15.0f;
-  settings.incrementPercentHighDS = 50.0f;
-  settings.incrementPercentTempDS = 20.0f;
-  settings.tempIdealDS = 24.0f;
+  settings.incrementPercentLowDS = 5.0f;
+  settings.incrementPercentHighDS = 20.0f;
+  settings.incrementPercentTempDS = 10.0f;
+  settings.tempIdealDS = 23.0f;
   settings.tempExtremeHighDS = 30.0f;
-  settings.tempExtremeLowDS = -10.0f;
-  settings.humExtremeHighDS = 80.0f;
+  settings.tempExtremeLowDS = -7.0f;
+  settings.humExtremeHighDS = 85.0f;
 
   // Sensor offset defaults
   settings.bmeTempOffset = 0.0f;

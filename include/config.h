@@ -101,42 +101,44 @@ const bool NND_DAYS[7] = {true, true, true, true, true, false, false};
 #define DATA_SAVE_INTERVAL 360
 #define LOG_THRESHOLD_IDLE 10240  // 10kB - flush logs when idle
 #define LOG_BUFFER_MAX 30720      // 30kB - force flush regardless of idle status
+// Privzete vrednosti za struct so odstranjene - glej initDefaults() v globals.cpp
+// To poenostavi vzdrževanje tovarniških nastavitev (samo eno mesto za spremembe)
 struct Settings {
-    float humThreshold = 60.0;
-    uint16_t fanDuration = 180;
-    uint16_t fanOffDuration = 1200;
-    uint16_t fanOffDurationKop = 1200;
-    float tempLowThreshold = 5.0;
-    float tempMinThreshold = -10.0;
-    bool dndAllowableAutomatic = true;
-    bool dndAllowableSemiautomatic = true;
-    bool dndAllowableManual = true;
-    uint16_t cycleDurationDS = 3600; 
-    float cycleActivePercentDS = 10.0; 
-    float humThresholdDS = 60.0;
-    float humThresholdHighDS = 70.0;
-    uint16_t co2ThresholdLowDS = 900;
-    uint16_t co2ThresholdHighDS = 1200;
-    float incrementPercentLowDS = 15.0;
-    float incrementPercentHighDS = 50.0;
-    float incrementPercentTempDS = 20.0;
-    float tempIdealDS = 24.0;
-    float tempExtremeHighDS = 30.0;
-    float tempExtremeLowDS = -10.0;
-    float humExtremeHighDS = 80.0;
+    float humThreshold;
+    uint16_t fanDuration;
+    uint16_t fanOffDuration;
+    uint16_t fanOffDurationKop;
+    float tempLowThreshold;
+    float tempMinThreshold;
+    bool dndAllowableAutomatic;
+    bool dndAllowableSemiautomatic;
+    bool dndAllowableManual;
+    uint16_t cycleDurationDS;
+    float cycleActivePercentDS;
+    float humThresholdDS;
+    float humThresholdHighDS;
+    uint16_t co2ThresholdLowDS;
+    uint16_t co2ThresholdHighDS;
+    float incrementPercentLowDS;
+    float incrementPercentHighDS;
+    float incrementPercentTempDS;
+    float tempIdealDS;
+    float tempExtremeHighDS;
+    float tempExtremeLowDS;
+    float humExtremeHighDS;
 
     // Sensor offset settings for CEE
-    float bmeTempOffset = 0.0f;        // BME280 temperature offset (°C)
-    float bmeHumidityOffset = 0.0f;    // BME280 humidity offset (%)
-    float bmePressureOffset = 0.0f;    // BME280 pressure offset (hPa)
-    float shtTempOffset = 0.0f;        // SHT41 temperature offset (°C)
-    float shtHumidityOffset = 0.0f;    // SHT41 humidity offset (%)
+    float bmeTempOffset;        // BME280 temperature offset (°C)
+    float bmeHumidityOffset;    // BME280 humidity offset (%)
+    float bmePressureOffset;    // BME280 pressure offset (hPa)
+    float shtTempOffset;        // SHT41 temperature offset (°C)
+    float shtHumidityOffset;    // SHT41 humidity offset (%)
 
     // Reserved for future sensor offsets
-    float reservedSensor1 = 0.0f;
-    float reservedSensor2 = 0.0f;
+    float reservedSensor1;
+    float reservedSensor2;
 
-    uint32_t lastKnownUnixTime = 0;
+    uint32_t lastKnownUnixTime;
 } __attribute__((packed));
 struct ExternalData {
     float externalTemperature;
@@ -183,7 +185,9 @@ struct CurrentData {
     bool manualTriggerWC;
     bool disableBathroom;
     bool manualTriggerBathroom;
+    bool manualTriggerBathroomDrying;
     bool manualTriggerUtility;
+    bool manualTriggerUtilityDrying;
     bool disableUtility;
     bool disableLivingRoom;
     bool manualTriggerLivingRoom;
