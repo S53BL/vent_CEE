@@ -197,6 +197,13 @@ struct CurrentData {
     unsigned long lastStatusUpdateTime;
     float supply5V;      // izmerjena 5 V napetost (po korekciji)
     float supply3V3;     // izmerjena 3,3 V napetost (po korekciji)
+    // Drying mode status
+    bool utilityDryingMode;
+    bool bathroomDryingMode;
+    int utilityCycleMode;
+    int bathroomCycleMode;
+    time_t utilityExpectedEndTime;
+    time_t bathroomExpectedEndTime;
 };
 #endif
 // config.h

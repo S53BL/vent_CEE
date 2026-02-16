@@ -6,6 +6,9 @@
 #include "logging.h"
 #include "vent.h"
 #include "system.h"
+#include "sens.h"
+
+const unsigned long base_fan_duration_UT = 360000; // 360 s v ms
 
 // Forward declarations for helper functions
 bool checkAutomaticPreconditions();
@@ -153,189 +156,224 @@ void controlWC() {
 }
 
 void controlUtility() {
-    static unsigned long fanStartTime = 0;
-    static unsigned long lastOffTime = 0;
-    static bool fanActive = false;
-    static bool lastLightState = false;
-    static bool lastSwitchState = false;
+    static time_t expected_end_timeUT = 0;
+    static float utility_hum_history[10] = {0};
+    static bool utility_drying_mode = false;
+    static int utility_cycle_mode = 0;
+    static int utility_burst_count = 0;
+    static float utility_baseline_hum = 45.0; // privzeto 45 %
 
-    bool currentLightState = currentData.utilityLight;
-    bool currentSwitchState = currentData.utilitySwitch;
+    // Branje senzorja (vsakih 60 s, ampak klicano iz loop)
+    // Predpostavi, da readSensors() posodobi currentData.utilityHumidity itd.
 
-    // Če ni NTP sinhronizacije - samo lokalni triggerji delujejo
-    if (!timeSynced) {
-        // Handle switch toggles and manual triggers only
-        char logMessage[256];
-        if (currentSwitchState != lastSwitchState) {
-            if (!currentSwitchState) {
-                currentData.disableUtility = true;
-                snprintf(logMessage, sizeof(logMessage), "[UT Vent] Diss via SW");
-                logEvent(logMessage);
-            } else {
-                currentData.disableUtility = false;
-                snprintf(logMessage, sizeof(logMessage), "[UT Vent] Enab via SW");
-                logEvent(logMessage);
-            }
-        }
+    // Update history (shift array)
+    for (int i = 0; i < 9; i++) {
+        utility_hum_history[i] = utility_hum_history[i+1];
+    }
+    utility_hum_history[9] = currentData.utilityHumidity;
 
-        if (currentData.disableUtility) {
-            if (fanActive) {
-                digitalWrite(PIN_UTILITY_ODVOD, LOW);
-                fanActive = false;
-                currentData.utilityFan = false;
-                currentData.offTimes[1] = 0;
-                snprintf(logMessage, sizeof(logMessage), "[UT Vent] OFF: Diss via REW/SW");
-                logEvent(logMessage);
-            }
-        } else if (currentData.manualTriggerUtility) {
-            digitalWrite(PIN_UTILITY_ODVOD, HIGH);
-            fanStartTime = millis();
-            fanActive = true;
-            currentData.utilityFan = true;
-            unsigned long duration = settings.fanDuration * 1000;
-            snprintf(logMessage, sizeof(logMessage), "[UT Vent] ON: Man Trigg via REW, Trajanje: %u s", duration / 1000);
-            logEvent(logMessage);
-            currentData.manualTriggerUtility = false;
-        }
-
-        // Handle timeout for active fans
-        if (fanActive && (millis() - fanStartTime >= settings.fanDuration * 1000)) {
+    // Če disableUtility, prekini cikel
+    if (currentData.disableUtility) {
+        if (digitalRead(PIN_UTILITY_ODVOD) == HIGH) {
             digitalWrite(PIN_UTILITY_ODVOD, LOW);
-            fanActive = false;
             currentData.utilityFan = false;
-            currentData.offTimes[1] = 0;
-            lastOffTime = millis();
-            snprintf(logMessage, sizeof(logMessage), "[UT Vent] OFF: Cikel konec");
+            char logMessage[256];
+            snprintf(logMessage, sizeof(logMessage), "[UT Vent] OFF: Disable via switch/REW");
             logEvent(logMessage);
         }
-
-        lastLightState = currentLightState;
-        lastSwitchState = currentSwitchState;
+        utility_drying_mode = false;
+        utility_cycle_mode = 0;
+        utility_burst_count = 0;
         return;
     }
 
-    bool manualTrigger = currentData.manualTriggerUtility && (!isDNDTime() || settings.dndAllowableManual);
+    // Čakanje na trigger
+    if (!utility_drying_mode && utility_cycle_mode == 0) {
+        float trend = utility_hum_history[9] - utility_hum_history[0];
+        float rate = (utility_hum_history[9] - utility_hum_history[8]) / 1.0; // %/min
+        float prev_rate = (utility_hum_history[8] - utility_hum_history[7]) / 1.0;
+        bool stabilizing = (abs(rate) < 0.1 && abs(prev_rate) < 0.1);
+        if (trend > 10.0 && utility_hum_history[9] > utility_baseline_hum + 10.0 && stabilizing) {
+            int mode = determineCycleMode();
+            if (mode > 0) {
+                utility_drying_mode = true;
+                utility_cycle_mode = mode;
+                utility_burst_count = 0;
+                char logMessage[256];
+                snprintf(logMessage, sizeof(logMessage), "[UT Vent] Trigger: Trend=%.1f%%, Mode=%d", trend, mode);
+                logEvent(logMessage);
+            } else {
+                char logMessage[256];
+                snprintf(logMessage, sizeof(logMessage), "[UT Vent] Trigger blocked: Mode=%d", mode);
+                logEvent(logMessage);
+            }
+        }
+        return;
+    }
+
+    // Določitev duration in off
+    float duration_factor = (utility_cycle_mode == 1) ? 1.0 : (utility_cycle_mode == 2) ? 0.6 : 0.3;
+    float off_factor = (utility_cycle_mode == 1) ? 1.0 : (utility_cycle_mode == 2) ? 1.5 : 2.0;
+    unsigned long fan_duration = base_fan_duration_UT * duration_factor; // ms // specifično za UT
+    unsigned long fan_off_duration = settings.fanOffDuration * off_factor * 1000; // iz settings
+
+    // Izračun expected end samo če smo v drying mode
+    static time_t previous_expected_end_timeUT = 0;
+    if (utility_drying_mode && utility_cycle_mode >= 1 && utility_cycle_mode <= 3) {
+        time_t now = myTZ.now();
+        unsigned long total_seconds = (3 * (fan_duration / 1000)) + (2 * (fan_off_duration / 1000));
+        expected_end_timeUT = now + total_seconds;
+
+        // Log samo ob spremembi
+        if (expected_end_timeUT != previous_expected_end_timeUT) {
+            char logMessage[256];
+            snprintf(logMessage, sizeof(logMessage), "[UT Vent] Expected end: %lu (unixtime)", expected_end_timeUT);
+            logEvent(logMessage);
+            previous_expected_end_timeUT = expected_end_timeUT;
+        }
+    } else {
+        // Če nismo v drying mode, nastavi na 0
+        if (expected_end_timeUT != 0) {
+            expected_end_timeUT = 0;
+            previous_expected_end_timeUT = 0;
+        }
+    }
+
+    static unsigned long burst_start = 0;
+    static unsigned long off_start = 0;
+    static bool in_burst = false;
+
+    if (utility_drying_mode) {
+        if (isDNDTime() && !settings.dndAllowableAutomatic) {
+            // Preskoči auto burst v DND
+            return;
+        }
+
+        if (!in_burst) {
+            // Začni burst
+            digitalWrite(PIN_UTILITY_ODVOD, HIGH);
+            currentData.utilityFan = true;
+            burst_start = millis();
+            in_burst = true;
+            utility_burst_count++;
+            char logMessage[256];
+            snprintf(logMessage, sizeof(logMessage), "[UT Vent] Burst %d start: Hum=%.1f%%, Duration=%lu s", utility_burst_count, currentData.utilityHumidity, fan_duration/1000);
+            logEvent(logMessage);
+        } else if (millis() - burst_start >= fan_duration) {
+            // Konec bursta, začni off
+            digitalWrite(PIN_UTILITY_ODVOD, LOW);
+            currentData.utilityFan = false;
+            off_start = millis();
+            in_burst = false;
+            char logMessage[256];
+            snprintf(logMessage, sizeof(logMessage), "[UT Vent] Burst %d end: Hum=%.1f%%", utility_burst_count, currentData.utilityHumidity);
+            logEvent(logMessage);
+        } else if (!in_burst && millis() - off_start >= fan_off_duration) {
+            // Preveri za ponovitev
+            float rate1 = (utility_hum_history[9] - utility_hum_history[8]) / 1.0;
+            float rate2 = (utility_hum_history[8] - utility_hum_history[7]) / 1.0;
+            float rate3 = (utility_hum_history[7] - utility_hum_history[6]) / 1.0;
+            float avg_rate = (rate1 + rate2 + rate3) / 3.0;
+            if (currentData.utilityHumidity > 65.0 && utility_burst_count < 3) {
+                // Prilagodi off
+                if (avg_rate > 1.0) {
+                    fan_off_duration *= 1.2;
+                } else if (avg_rate < 0.2) {
+                    fan_off_duration *= 0.8;
+                }
+                // Ponovi burst
+            } else {
+                // Konec cikla
+                utility_drying_mode = false;
+                utility_cycle_mode = 0;
+                utility_burst_count = 0;
+                // Reset baseline
+                utility_baseline_hum = 0;
+                for (int i = 0; i < 10; i++) {
+                    utility_baseline_hum += utility_hum_history[i];
+                }
+                utility_baseline_hum /= 10.0;
+                char logMessage[256];
+                snprintf(logMessage, sizeof(logMessage), "[UT Vent] Cycle end: Hum=%.1f%%, Bursts=%d, Baseline=%.1f%%", currentData.utilityHumidity, utility_burst_count, utility_baseline_hum);
+                logEvent(logMessage);
+            }
+        }
+    }
+
+    // Handle semi-automatic (blokiraj v drying_mode)
+    bool lastLightState = false; // ohrani obstoječo logiko
+    bool currentLightState = currentData.utilityLight;
     bool semiAutomaticTrigger = lastLightState && !currentLightState && (!isDNDTime() || settings.dndAllowableSemiautomatic);
-    bool automaticTrigger = currentData.utilityHumidity >= settings.humThreshold &&
-                           (!isDNDTime() || settings.dndAllowableAutomatic) &&
-                           (millis() - lastOffTime >= settings.fanOffDuration / 2 * 1000 || !fanActive) &&
-                           externalDataValid;
-
-    // Check for ignored manual triggers due to DND restrictions
-    if (currentData.manualTriggerUtility && !manualTrigger) {
+    if (utility_drying_mode && semiAutomaticTrigger) {
         char logMessage[256];
-        snprintf(logMessage, sizeof(logMessage), "[UT Vent] Manual trigger ignored - DND dovoli ročno upravljanje = Disabled");
+        snprintf(logMessage, sizeof(logMessage), "[UT Vent] Semi-auto ignored: Drying mode active");
         logEvent(logMessage);
+    }
+    lastLightState = currentLightState;
+
+    // Handle manual (dovoli, podaljša burst če active)
+    bool manualTrigger = currentData.manualTriggerUtility && (!isDNDTime() || settings.dndAllowableManual);
+    if (manualTrigger) {
+        if (utility_drying_mode && in_burst) {
+            burst_start -= fan_duration; // podaljšaj za + fan_duration
+            char logMessage[256];
+            snprintf(logMessage, sizeof(logMessage), "[UT Vent] Manual extend burst");
+            logEvent(logMessage);
+        } else {
+            // Normal manual - če ni v drying_mode, zaženi normalno
+            if (!utility_drying_mode) {
+                digitalWrite(PIN_UTILITY_ODVOD, HIGH);
+                currentData.utilityFan = true;
+                burst_start = millis();
+                in_burst = true;
+                char logMessage[256];
+                snprintf(logMessage, sizeof(logMessage), "[UT Vent] Manual start: Duration=%lu s", fan_duration/1000);
+                logEvent(logMessage);
+            }
+        }
         currentData.manualTriggerUtility = false;
     }
 
-    // Check for ignored manual triggers due to fan already active
-    if (manualTrigger && fanActive) {
-        char logMessage[256];
-        snprintf(logMessage, sizeof(logMessage), "[UT Vent] Manual trigger ignored - fan already active");
-        logEvent(logMessage);
-        currentData.manualTriggerUtility = false;
-    }
-
-    char logMessage[256];
-
-    // Check for ignored manual triggers due to disabled state
-    if (currentData.disableUtility && currentData.manualTriggerUtility) {
-        snprintf(logMessage, sizeof(logMessage), "[UT Vent] Manual trigger ignored - utility disabled");
-        logEvent(logMessage);
-        currentData.manualTriggerUtility = false;
-    }
-
+    // Handle switch
+    static bool lastSwitchState = false;
+    bool currentSwitchState = currentData.utilitySwitch;
     if (currentSwitchState != lastSwitchState) {
         if (!currentSwitchState) {
             currentData.disableUtility = true;
-            snprintf(logMessage, sizeof(logMessage), "[UT Vent] Diss via SW");
+            utility_drying_mode = false;
+            utility_cycle_mode = 0;
+            utility_burst_count = 0;
+            if (in_burst) {
+                digitalWrite(PIN_UTILITY_ODVOD, LOW);
+                currentData.utilityFan = false;
+                in_burst = false;
+            }
+            char logMessage[256];
+            snprintf(logMessage, sizeof(logMessage), "[UT Vent] Disabled via switch");
             logEvent(logMessage);
         } else {
             currentData.disableUtility = false;
-            manualTrigger = true;
-            snprintf(logMessage, sizeof(logMessage), "[UT Vent] Enab via SW, Man Trigg");
+            char logMessage[256];
+            snprintf(logMessage, sizeof(logMessage), "[UT Vent] Enabled via switch");
             logEvent(logMessage);
         }
     }
-
-    if (currentData.disableUtility) {
-        if (fanActive) {
-            digitalWrite(PIN_UTILITY_ODVOD, LOW);
-            fanActive = false;
-            currentData.utilityFan = false;
-            currentData.offTimes[1] = 0;
-            snprintf(logMessage, sizeof(logMessage), "[UT Vent] OFF: Diss via REW/SW");
-            logEvent(logMessage);
-        }
-        lastLightState = currentLightState;
-        lastSwitchState = currentSwitchState;
-        return;
-    }
-
-    bool adverseConditions = currentData.externalHumidity > settings.humExtremeHighDS ||
-                            currentData.externalTemp < settings.tempMinThreshold;
-    bool reducedConditions = currentData.externalTemp < settings.tempLowThreshold;
-
-    if ((manualTrigger || semiAutomaticTrigger || automaticTrigger) && !adverseConditions && !fanActive) {
-        digitalWrite(PIN_UTILITY_ODVOD, HIGH);
-        fanStartTime = millis();
-        fanActive = true;
-        currentData.utilityFan = true;
-        unsigned long duration = reducedConditions ? settings.fanDuration / 2 * 1000 : settings.fanDuration * 1000;
-        currentData.offTimes[1] = myTZ.now() + duration / 1000;
-        const char* triggerType = manualTrigger ? "Man Trigg via SW" :
-                                 (semiAutomaticTrigger ? "SemiAuto Trigg (Luč OFF)" : "Auto Trigg");
-        if (manualTrigger) {
-            snprintf(logMessage, sizeof(logMessage), "[UT Vent] ON: %s, Trajanje: %u s",
-                     triggerType, duration / 1000);
-        } else {
-            snprintf(logMessage, sizeof(logMessage), "[UT Vent] ON: %s, Hut=%.1f%%>humThreshold=%.1f%%, Trajanje: %u s",
-                     triggerType, currentData.utilityHumidity, settings.humThreshold, duration / 1000);
-        }
-        logEvent(logMessage);
-        if (manualTrigger || (lastSwitchState == false && currentSwitchState == true)) {
-            currentData.manualTriggerUtility = false;
-        }
-    } else if ((manualTrigger || semiAutomaticTrigger || automaticTrigger) && adverseConditions) {
-        if (lastSensorRead > 0) {
-            snprintf(logMessage, sizeof(logMessage), "[UT Vent] OFF: Hext=%.1f%%>humExtremeHighDS=%.1f%%",
-                     currentData.externalHumidity, settings.humExtremeHighDS);
-            logEvent(logMessage);
-        }
-    }
-
-    if (fanActive) {
-        unsigned long duration = reducedConditions ? settings.fanDuration / 2 * 1000 : settings.fanDuration * 1000;
-        if (millis() - fanStartTime >= duration) {
-            digitalWrite(PIN_UTILITY_ODVOD, LOW);
-            fanActive = false;
-            currentData.utilityFan = false;
-            currentData.offTimes[1] = 0;
-            lastOffTime = millis();
-            snprintf(logMessage, sizeof(logMessage), "[UT Vent] OFF: Cikel konec (%u s)", duration / 1000);
-            logEvent(logMessage);
-        }
-    }
-
-    static unsigned long lastSensorCheck = 0;
-    if (millis() - lastSensorCheck >= SENSOR_TEST_INTERVAL * 1000) {
-        if (currentData.errorFlags & 0x02) {
-            digitalWrite(PIN_UTILITY_ODVOD, LOW);
-            fanActive = false;
-            currentData.utilityFan = false;
-            currentData.offTimes[1] = 0;
-            snprintf(logMessage, sizeof(logMessage), "[UT Vent] OFF: Senzor napaka");
-            logEvent(logMessage);
-        }
-        lastSensorCheck = millis();
-    }
-
-    lastLightState = currentLightState;
     lastSwitchState = currentSwitchState;
+
+    // Update global status
+    currentData.utilityDryingMode = utility_drying_mode;
+    currentData.utilityCycleMode = utility_cycle_mode;
+    currentData.utilityExpectedEndTime = expected_end_timeUT;
 }
 
 void controlBathroom() {
+    static time_t expected_end_timeKOP = 0;
+    static float hum_history[3] = {45.0, 45.0, 45.0};
+    static bool drying_mode = false;
+    static int cycle_mode = 0;
+    static int burst_count = 0;
+    static float baseline_hum = 45.0;
+
     static unsigned long fanStartTime = 0;
     static unsigned long lastOffTime = 0;
     static unsigned long buttonPressStart = 0;
@@ -350,6 +388,30 @@ void controlBathroom() {
     bool currentLightState1 = currentData.bathroomLight1;
     bool currentLightState2 = currentData.bathroomLight2;
     bool currentLightOn = currentLightState1 || currentLightState2;
+
+    // Update history (shift array)
+    for (int i = 0; i < 2; i++) {
+        hum_history[i] = hum_history[i+1];
+    }
+    hum_history[2] = currentData.bathroomHumidity;
+
+    // Če disableBathroom, prekini cikel
+    if (currentData.disableBathroom) {
+        if (digitalRead(PIN_KOPALNICA_ODVOD) == HIGH) {
+            digitalWrite(PIN_KOPALNICA_ODVOD, LOW);
+            currentData.bathroomFan = false;
+            char logMessage[256];
+            snprintf(logMessage, sizeof(logMessage), "[KOP Vent] OFF: Disable via switch/REW");
+            logEvent(logMessage);
+        }
+        drying_mode = false;
+        cycle_mode = 0;
+        burst_count = 0;
+        lastButtonState = currentButtonState;
+        lastLightState1 = currentLightState1;
+        lastLightState2 = currentLightState2;
+        return;
+    }
 
     // Če ni NTP sinhronizacije - samo lokalni triggerji delujejo
     if (!timeSynced) {
@@ -414,6 +476,116 @@ void controlBathroom() {
         currentData.manualTriggerBathroom = false;
     }
 
+    // Čakanje na trigger
+    if (!drying_mode && cycle_mode == 0) {
+        float trend = hum_history[2] - hum_history[0];
+        if (trend > 10.0 && hum_history[2] > baseline_hum + 10.0) {
+            int mode = determineCycleMode();
+            if (mode > 0) {
+                drying_mode = true;
+                cycle_mode = mode;
+                burst_count = 0;
+                char logMessage[256];
+                snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Trigger: Trend=%.1f%%, Mode=%d", trend, mode);
+                logEvent(logMessage);
+            } else {
+                char logMessage[256];
+                snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Trigger blocked: Mode=%d", mode);
+                logEvent(logMessage);
+            }
+        }
+    }
+
+    // Določitev duration in off
+    float duration_factor = (cycle_mode == 1) ? 1.0 : (cycle_mode == 2) ? 0.8 : 0.5;
+    unsigned long fan_duration = 360 * duration_factor * 1000; // ms  // specifično za KOP
+    unsigned long fan_off_duration = settings.fanOffDurationKop * 1000; // iz settings, brez faktorja
+
+    // Izračun expected end samo če smo v drying mode
+    static time_t previous_expected_end_timeKOP = 0;
+    if (drying_mode && cycle_mode >= 1 && cycle_mode <= 3) {
+        time_t now = myTZ.now();
+        unsigned long total_seconds = (3 * (fan_duration / 1000)) + (2 * (fan_off_duration / 1000));
+        expected_end_timeKOP = now + total_seconds;
+
+        // Log samo ob spremembi
+        if (expected_end_timeKOP != previous_expected_end_timeKOP) {
+            char logMessage[256];
+            snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Expected end: %lu (unixtime)", expected_end_timeKOP);
+            logEvent(logMessage);
+            previous_expected_end_timeKOP = expected_end_timeKOP;
+        }
+    } else {
+        // Če nismo v drying mode, nastavi na 0
+        if (expected_end_timeKOP != 0) {
+            expected_end_timeKOP = 0;
+            previous_expected_end_timeKOP = 0;
+        }
+    }
+
+    static unsigned long burst_start = 0;
+    static unsigned long off_start = 0;
+    static bool in_burst = false;
+
+    if (drying_mode) {
+        if (isDNDTime() && !settings.dndAllowableAutomatic) {
+            // Preskoči auto burst v DND
+            lastButtonState = currentButtonState;
+            lastLightState1 = currentLightState1;
+            lastLightState2 = currentLightState2;
+            return;
+        }
+
+        if (!in_burst) {
+            // Začni burst
+            digitalWrite(PIN_KOPALNICA_ODVOD, HIGH);
+            currentData.bathroomFan = true;
+            burst_start = millis();
+            in_burst = true;
+            burst_count++;
+            char logMessage[256];
+            snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Burst %d start: Hum=%.1f%%, Duration=%lu s", burst_count, currentData.bathroomHumidity, fan_duration/1000);
+            logEvent(logMessage);
+        } else if (millis() - burst_start >= fan_duration) {
+            // Konec bursta, začni off
+            digitalWrite(PIN_KOPALNICA_ODVOD, LOW);
+            currentData.bathroomFan = false;
+            off_start = millis();
+            in_burst = false;
+            char logMessage[256];
+            snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Burst %d end: Hum=%.1f%%", burst_count, currentData.bathroomHumidity);
+            logEvent(logMessage);
+        } else if (!in_burst && millis() - off_start >= fan_off_duration) {
+            // Preveri za ponovitev
+            float rate1 = (hum_history[2] - hum_history[1]) / 1.0;
+            float rate2 = (hum_history[1] - hum_history[0]) / 1.0;
+            float avg_rate = (rate1 + rate2) / 2.0; // samo 2 rate za 3 branja
+            if (currentData.bathroomHumidity > 65.0 && burst_count < 3) {
+                // Prilagodi off
+                if (avg_rate > 1.0) {
+                    fan_off_duration *= 1.2;
+                } else if (avg_rate < 0.2) {
+                    fan_off_duration *= 0.8;
+                }
+                // Ponovi burst
+            } else {
+                // Konec cikla
+                drying_mode = false;
+                cycle_mode = 0;
+                burst_count = 0;
+                // Reset baseline in history
+                baseline_hum = 45.0;
+                hum_history[0] = 45.0;
+                hum_history[1] = 45.0;
+                hum_history[2] = 45.0;
+                char logMessage[256];
+                snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Cycle end: Hum=%.1f%%, Bursts=%d, Baseline=%.1f%%", currentData.bathroomHumidity, burst_count, baseline_hum);
+                logEvent(logMessage);
+            }
+        }
+    }
+
+    // Handle button presses
     if (currentButtonState && !lastButtonState) {
         buttonPressStart = millis();
         snprintf(logMessage, sizeof(logMessage), "[KOP SW] Začetek pritiska");
@@ -451,31 +623,8 @@ void controlBathroom() {
         }
     }
 
-    if (currentData.disableBathroom) {
-        if (fanActive) {
-            digitalWrite(PIN_KOPALNICA_ODVOD, LOW);
-            fanActive = false;
-            currentData.bathroomFan = false;
-            currentData.offTimes[0] = 0;
-            snprintf(logMessage, sizeof(logMessage), "[KOP Vent] OFF: Diss via REW");
-            logEvent(logMessage);
-        }
-        lastButtonState = currentButtonState;
-        lastLightState1 = currentLightState1;
-        lastLightState2 = currentLightState2;
-        return;
-    }
-
-    bool adverseConditions = currentData.externalHumidity > settings.humExtremeHighDS ||
-                            currentData.externalTemp < settings.tempMinThreshold;
-    bool reducedConditions = currentData.externalTemp < settings.tempLowThreshold;
-
     bool manualTriggerREW = currentData.manualTriggerBathroom && (!isDNDTime() || settings.dndAllowableManual);
     bool semiAutomaticTrigger = (lastLightState1 || lastLightState2) && !currentLightState1 && !currentLightState2 && (!isDNDTime() || settings.dndAllowableSemiautomatic);
-    bool automaticTrigger = currentData.bathroomHumidity >= settings.humThreshold &&
-                           (!isDNDTime() || settings.dndAllowableAutomatic) &&
-                           (millis() - lastOffTime >= settings.fanOffDuration / 2 * 1000 || !fanActive) &&
-                           externalDataValid;
 
     // Check for ignored manual triggers due to DND restrictions
     if (currentData.manualTriggerBathroom && !manualTriggerREW) {
@@ -493,39 +642,30 @@ void controlBathroom() {
         currentData.manualTriggerBathroom = false;
     }
 
-    if ((manualTriggerREW || semiAutomaticTrigger || automaticTrigger) && !adverseConditions && !fanActive) {
-        digitalWrite(PIN_KOPALNICA_ODVOD, HIGH);
-        fanStartTime = millis();
-        fanActive = true;
-        currentData.bathroomFan = true;
-        unsigned long duration = reducedConditions ? settings.fanDuration / 2 * 1000 : settings.fanDuration * 1000;
-        currentData.offTimes[0] = myTZ.now() + duration / 1000;
-
-        const char* triggerType;
-        if (manualTriggerREW) {
-            triggerType = "Man Trigg via REW";
-            currentData.manualTriggerBathroom = false;
-        } else if (semiAutomaticTrigger) {
-            triggerType = "SemiAuto Trigg (Luč OFF)";
-        } else {
-            triggerType = "Auto Trigg";
-        }
-
-        snprintf(logMessage, sizeof(logMessage), "[KOP Vent] ON: %s, Hkop=%.1f%%>humThreshold=%.1f%%, Trajanje: %u s",
-                 triggerType, currentData.bathroomHumidity, settings.humThreshold, duration / 1000);
+    // Handle semi-automatic (blokiraj v drying_mode)
+    if (drying_mode && semiAutomaticTrigger) {
+        char logMessage[256];
+        snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Semi-auto ignored: Drying mode active");
         logEvent(logMessage);
-    } else if ((semiAutomaticTrigger || automaticTrigger) && adverseConditions) {
-        if (lastSensorRead > 0) {
-            snprintf(logMessage, sizeof(logMessage), "[KOP Vent] OFF: Hext=%.1f%%>humExtremeHighDS=%.1f%%",
-                     currentData.externalHumidity, settings.humExtremeHighDS);
+    }
+
+    // Handle manual (dovoli, podaljša burst če active)
+    if (manualTriggerREW) {
+        if (drying_mode && in_burst) {
+            burst_start -= fan_duration; // podaljšaj za + fan_duration
+            char logMessage[256];
+            snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Manual extend burst");
             logEvent(logMessage);
+        } else {
+            // Normal manual
         }
+        currentData.manualTriggerBathroom = false;
     }
 
     if (fanActive) {
         unsigned long duration = (isLongPress && manualTriggerREW) ?
                                 settings.fanDuration * 2 * 1000 :
-                                (reducedConditions ? settings.fanDuration / 2 * 1000 : settings.fanDuration * 1000);
+                                settings.fanDuration * 1000;
         if (millis() - fanStartTime >= duration) {
             digitalWrite(PIN_KOPALNICA_ODVOD, LOW);
             fanActive = false;
@@ -559,6 +699,11 @@ void controlBathroom() {
     lastButtonState = currentButtonState;
     lastLightState1 = currentLightState1;
     lastLightState2 = currentLightState2;
+
+    // Update global status
+    currentData.bathroomDryingMode = drying_mode;
+    currentData.bathroomCycleMode = cycle_mode;
+    currentData.bathroomExpectedEndTime = expected_end_timeKOP;
 }
 
 void controlLivingRoom() {

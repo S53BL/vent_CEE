@@ -60,6 +60,52 @@ String getErrorDescription(uint8_t errorFlags) {
     return errors;
 }
 
+// Helper function to get duty cycle parameter status
+String getDutyCycleParamStatus() {
+    String status = "";
+
+    // CO2 Low
+    bool co2LowActive = !isnan(currentData.livingCO2) && currentData.livingCO2 >= settings.co2ThresholdLowDS;
+    status += "CO2 Low: " + String(co2LowActive ? "✓" : "✗") + "<br>";
+
+    // CO2 High
+    bool co2HighActive = !isnan(currentData.livingCO2) && currentData.livingCO2 >= settings.co2ThresholdHighDS;
+    status += "CO2 High: " + String(co2HighActive ? "✓" : "✗") + "<br>";
+
+    // Hum Low
+    bool humLowActive = !isnan(currentData.livingHumidity) && currentData.livingHumidity >= settings.humThresholdDS;
+    status += "Hum Low: " + String(humLowActive ? "✓" : "✗") + "<br>";
+
+    // Hum High
+    bool humHighActive = !isnan(currentData.livingHumidity) && currentData.livingHumidity >= settings.humThresholdHighDS;
+    status += "Hum High: " + String(humHighActive ? "✓" : "✗") + "<br>";
+
+    // Temp (cooling/heating active)
+    bool tempActive = !isNNDTime() && !isnan(currentData.livingTemp) && !isnan(currentData.externalTemp) &&
+                     ((currentData.livingTemp > settings.tempIdealDS && currentData.externalTemp < currentData.livingTemp) ||
+                      (currentData.livingTemp < settings.tempIdealDS && currentData.externalTemp > currentData.livingTemp));
+    status += "Temp: " + String(tempActive ? "✓" : "✗") + "<br>";
+
+    // Adverse conditions
+    bool adverseActive = currentData.externalHumidity > settings.humExtremeHighDS ||
+                        currentData.externalTemp > settings.tempExtremeHighDS ||
+                        currentData.externalTemp < settings.tempExtremeLowDS;
+    status += "Adverse: " + String(adverseActive ? "✓" : "✗") + "<br>";
+
+    return status;
+}
+
+// Helper function to get fan level reason
+String getFanLevelReason() {
+    if (isDNDTime()) return "DND";
+
+    bool highIncrement = (!isnan(currentData.livingHumidity) && currentData.livingHumidity >= settings.humThresholdHighDS) ||
+                         (!isnan(currentData.livingCO2) && currentData.livingCO2 >= settings.co2ThresholdHighDS);
+    if (highIncrement) return "High increment";
+
+    return "Normal";
+}
+
 String getSlovenianDateTime() {
     if (!timeSynced) return "Čas ni sinhroniziran";
 
@@ -1233,6 +1279,18 @@ void handleRoot(AsyncWebServerRequest *request) {
                 <span class="status-label">Preostali čas:</span>
                 <span class="status-value" id="kop-remaining">)rawliteral" + String(getRemainingTime(0)) + R"rawliteral( s</span>
             </div>
+            <div class="status-item">
+                <span class="status-label">Drying mode:</span>
+                <span class="status-value" id="kop-drying-mode">)rawliteral" + (currentData.bathroomDryingMode ? "DA" : "NE") + R"rawliteral(</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Cycle mode:</span>
+                <span class="status-value" id="kop-cycle-mode">)rawliteral" + String(currentData.bathroomCycleMode) + R"rawliteral(</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Expected end:</span>
+                <span class="status-value" id="kop-expected-end">)rawliteral" + (currentData.bathroomDryingMode ? String(currentData.bathroomExpectedEndTime) : "N/A") + R"rawliteral(</span>
+            </div>
         </div>
 
         <!-- UT Card -->
@@ -1261,6 +1319,18 @@ void handleRoot(AsyncWebServerRequest *request) {
             <div class="status-item">
                 <span class="status-label">Preostali čas:</span>
                 <span class="status-value" id="ut-remaining">)rawliteral" + String(getRemainingTime(1)) + R"rawliteral( s</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Drying mode:</span>
+                <span class="status-value" id="ut-drying-mode">)rawliteral" + (currentData.utilityDryingMode ? "DA" : "NE") + R"rawliteral(</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Cycle mode:</span>
+                <span class="status-value" id="ut-cycle-mode">)rawliteral" + String(currentData.utilityCycleMode) + R"rawliteral(</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Expected end:</span>
+                <span class="status-value" id="ut-expected-end">)rawliteral" + (currentData.utilityDryingMode ? String(currentData.utilityExpectedEndTime) : "N/A") + R"rawliteral(</span>
             </div>
         </div>
 
@@ -1305,36 +1375,12 @@ void handleRoot(AsyncWebServerRequest *request) {
         <div class="card">
             <h2>DS Duty Cycle Parametri</h2>
             <div class="status-item">
-                <span class="status-label">CO2 Low Threshold:</span>
-                <span class="status-value">)rawliteral" + String(settings.co2ThresholdLowDS) + R"rawliteral( ppm</span>
+                <span class="status-label">Razlog za level:</span>
+                <span class="status-value">)rawliteral" + getFanLevelReason() + R"rawliteral(</span>
             </div>
             <div class="status-item">
-                <span class="status-label">CO2 High Threshold:</span>
-                <span class="status-value">)rawliteral" + String(settings.co2ThresholdHighDS) + R"rawliteral( ppm</span>
-            </div>
-            <div class="status-item">
-                <span class="status-label">Hum Low Threshold:</span>
-                <span class="status-value">)rawliteral" + String(settings.humThresholdDS, 1) + R"rawliteral( %</span>
-            </div>
-            <div class="status-item">
-                <span class="status-label">Hum High Threshold:</span>
-                <span class="status-value">)rawliteral" + String(settings.humThresholdHighDS, 1) + R"rawliteral( %</span>
-            </div>
-            <div class="status-item">
-                <span class="status-label">Low Increment:</span>
-                <span class="status-value">)rawliteral" + String(settings.incrementPercentLowDS, 1) + R"rawliteral( %</span>
-            </div>
-            <div class="status-item">
-                <span class="status-label">High Increment:</span>
-                <span class="status-value">)rawliteral" + String(settings.incrementPercentHighDS, 1) + R"rawliteral( %</span>
-            </div>
-            <div class="status-item">
-                <span class="status-label">Temp Increment:</span>
-                <span class="status-value">)rawliteral" + String(settings.incrementPercentTempDS, 1) + R"rawliteral( %</span>
-            </div>
-            <div class="status-item">
-                <span class="status-label">Base Cycle:</span>
-                <span class="status-value">)rawliteral" + String(settings.cycleActivePercentDS, 1) + R"rawliteral( %</span>
+                <span class="status-label">Status parametrov:</span>
+                <span class="status-value">)rawliteral" + getDutyCycleParamStatus() + R"rawliteral(</span>
             </div>
         </div>
 
@@ -1484,6 +1530,9 @@ void handleRoot(AsyncWebServerRequest *request) {
                     document.getElementById("kop-light2").textContent = data.bathroom_light2 ? "ON" : "OFF";
                     document.getElementById("kop-fan").textContent = data.bathroom_disabled ? "DISABLED" : (data.bathroom_fan ? "ON" : "OFF");
                     document.getElementById("kop-remaining").textContent = data.bathroom_remaining + " s";
+                    document.getElementById("kop-drying-mode").textContent = data.bathroom_drying_mode ? "DA" : "NE";
+                    document.getElementById("kop-cycle-mode").textContent = data.bathroom_cycle_mode;
+                    document.getElementById("kop-expected-end").textContent = data.bathroom_expected_end_time;
 
                     // Update UT data
                     document.getElementById("ut-temp").textContent = data.utility_temp + " °C";
@@ -1492,6 +1541,9 @@ void handleRoot(AsyncWebServerRequest *request) {
                     document.getElementById("ut-switch").textContent = data.utility_switch ? "ON" : "OFF";
                     document.getElementById("ut-fan").textContent = data.utility_disabled ? "DISABLED" : (data.utility_fan ? "ON" : "OFF");
                     document.getElementById("ut-remaining").textContent = data.utility_remaining + " s";
+                    document.getElementById("ut-drying-mode").textContent = data.utility_drying_mode ? "DA" : "NE";
+                    document.getElementById("ut-cycle-mode").textContent = data.utility_cycle_mode;
+                    document.getElementById("ut-expected-end").textContent = data.utility_expected_end_time;
 
                     // Update DS data
                     document.getElementById("ds-temp").textContent = data.living_temp + " °C";
@@ -1679,6 +1731,9 @@ void handleCurrentDataRequest(AsyncWebServerRequest *request) {
                 String("\"bathroom_fan\":") + String(currentData.bathroomFan ? "true" : "false") + "," +
                 String("\"bathroom_disabled\":") + String(currentData.disableBathroom ? "true" : "false") + "," +
                 String("\"bathroom_remaining\":") + String(getRemainingTime(0)) + "," +
+                String("\"bathroom_drying_mode\":") + String(currentData.bathroomDryingMode ? "true" : "false") + "," +
+                String("\"bathroom_cycle_mode\":") + String(currentData.bathroomCycleMode) + "," +
+                String("\"bathroom_expected_end_time\":") + String(currentData.bathroomExpectedEndTime) + "," +
                 String("\"utility_temp\":") + String(currentData.utilityTemp, 1) + "," +
                 String("\"utility_humidity\":") + String(currentData.utilityHumidity, 1) + "," +
                 String("\"utility_light\":") + String(currentData.utilityLight ? "true" : "false") + "," +
@@ -1686,6 +1741,9 @@ void handleCurrentDataRequest(AsyncWebServerRequest *request) {
                 String("\"utility_fan\":") + String(currentData.utilityFan ? "true" : "false") + "," +
                 String("\"utility_disabled\":") + String(currentData.disableUtility ? "true" : "false") + "," +
                 String("\"utility_remaining\":") + String(getRemainingTime(1)) + "," +
+                String("\"utility_drying_mode\":") + String(currentData.utilityDryingMode ? "true" : "false") + "," +
+                String("\"utility_cycle_mode\":") + String(currentData.utilityCycleMode) + "," +
+                String("\"utility_expected_end_time\":") + String(currentData.utilityExpectedEndTime) + "," +
                 String("\"wc_light\":") + String(currentData.wcLight ? "true" : "false") + "," +
                 String("\"wc_fan\":") + String(currentData.wcFan ? "true" : "false") + "," +
                 String("\"wc_disabled\":") + String(currentData.disableWc ? "true" : "false") + "," +

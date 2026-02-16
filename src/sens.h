@@ -18,4 +18,6 @@ void performPeriodicI2CReset();
 void setupInputs();
 void readInputs();
 
+int determineCycleMode();
+
 #endif // SENS_H

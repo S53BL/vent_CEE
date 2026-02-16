@@ -43,8 +43,10 @@
 #define FIELD_DUTY_CYCLE_LIVING   "dlds"  // duty_cycle_living_room
 
 // DEW_UPDATE field names (CEE → DEW)
-#define FIELD_DEW_FAN             "df"    // dew_fan
-#define FIELD_DEW_OFF_TIME        "do"    // dew_off_timestamp
+#define FIELD_DEW_FAN_UTILITY     "fut"   // fan_utility
+#define FIELD_DEW_FAN_BATHROOM    "fkop"  // fan_bathroom
+#define FIELD_DEW_TIME_UTILITY    "tut"   // time_utility
+#define FIELD_DEW_TIME_BATHROOM   "tkop"  // time_bathroom
 #define FIELD_DEW_TEMP            "dt"    // dew_temperature
 #define FIELD_DEW_HUM             "dh"    // dew_humidity
 #define FIELD_DEW_ERROR           "de"    // dew_error

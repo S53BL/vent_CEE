@@ -497,3 +497,20 @@ void readInputs() {
         }
     }
 }
+
+int determineCycleMode() {
+    if (currentData.errorFlags & (ERR_SHT41 | ERR_DEW) || !externalDataValid) {
+        return -1;
+    }
+    float dew_internal = currentData.utilityTemp - ((100 - currentData.utilityHumidity) / 5.0);
+    float dew_external = currentData.externalTemp - ((100 - currentData.externalHumidity) / 5.0);
+    float dew_diff = dew_internal - dew_external;
+    if (currentData.externalTemp >= settings.tempLowThreshold && dew_diff > 2.0) {
+        return 1; // normalno
+    } else if (currentData.externalTemp < settings.tempLowThreshold || (dew_diff >= 0.0 && dew_diff <= 2.0) || currentData.externalHumidity > 70.0) {
+        return 2; // malo zmanjšano
+    } else if (currentData.externalTemp < -5.0 || dew_diff < 0.0 || currentData.externalHumidity > settings.humExtremeHighDS) {
+        return 3; // zelo zmanjšano
+    }
+    return -1; // blok ko ni parametrov za izračun
+}
