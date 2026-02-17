@@ -162,6 +162,7 @@ void controlUtility() {
     static int utility_cycle_mode = 0;
     static int utility_burst_count = 0;
     static float utility_baseline_hum = 45.0; // privzeto 45 %
+    static unsigned long off_start = 0;
 
     // Branje senzorja (vsakih 60 s, ampak klicano iz loop)
     // Predpostavi, da readSensors() posodobi currentData.utilityHumidity itd.
@@ -196,6 +197,8 @@ void controlUtility() {
                 utility_drying_mode = true;
                 utility_cycle_mode = mode;
                 utility_burst_count = 0;
+                float off_factor_temp = (mode == 1) ? 1.0 : (mode == 2) ? 1.5 : 2.0;
+                off_start = millis() - (settings.fanOffDuration * off_factor_temp * 1000);
                 // Calculate expected end time once at trigger
                 time_t now = myTZ.now();
                 unsigned long total_seconds = (3 * (base_fan_duration_UT * (mode == 1 ? 1.0 : mode == 2 ? 0.6 : 0.3) / 1000)) + (2 * (settings.fanOffDuration * (mode == 1 ? 1.0 : mode == 2 ? 1.5 : 2.0) * 1000 / 1000));
@@ -225,6 +228,8 @@ void controlUtility() {
                 utility_drying_mode = true;
                 utility_cycle_mode = mode;
                 utility_burst_count = 0;
+                float off_factor_temp = (mode == 1) ? 1.0 : (mode == 2) ? 1.5 : 2.0;
+                off_start = millis() - (settings.fanOffDuration * off_factor_temp * 1000);
                 char logMessage[256];
                 snprintf(logMessage, sizeof(logMessage), "[UT Vent] Trigger: Trend=%.1f%%, Mode=%d", trend, mode);
                 logEvent(logMessage);
@@ -246,7 +251,6 @@ void controlUtility() {
     // Expected end time is calculated once at trigger, just copy to currentData
 
     static unsigned long burst_start = 0;
-    static unsigned long off_start = 0;
     static bool in_burst = false;
 
     if (utility_drying_mode) {
@@ -256,17 +260,43 @@ void controlUtility() {
         }
 
         if (!in_burst) {
-            // Začni burst
-            digitalWrite(PIN_UTILITY_ODVOD, HIGH);
-            currentData.utilityFan = true;
-            burst_start = millis();
-            in_burst = true;
-            utility_burst_count++;
-            char logMessage[256];
-            snprintf(logMessage, sizeof(logMessage), "[UT Vent] Burst %d start: Hum=%.1f%%, Duration=%lu s", utility_burst_count, currentData.utilityHumidity, fan_duration/1000);
-            logEvent(logMessage);
+            bool ready = (utility_burst_count == 0) || (millis() - off_start >= fan_off_duration);
+            if (ready) {
+                // --- Preveri ponovitev / konec (za utility_burst_count >= 1) ---
+                if (utility_burst_count >= 1) {
+                    float rate1 = (utility_hum_history[9] - utility_hum_history[8]) / 1.0;
+                    float rate2 = (utility_hum_history[8] - utility_hum_history[7]) / 1.0;
+                    float rate3 = (utility_hum_history[7] - utility_hum_history[6]) / 1.0;
+                    float avg_rate = (rate1 + rate2 + rate3) / 3.0;
+                    if (!(currentData.utilityHumidity > 65.0 && utility_burst_count < 3)) {
+                        // Konec cikla
+                        utility_drying_mode = false; utility_cycle_mode = 0; utility_burst_count = 0;
+                        utility_baseline_hum = 0;
+                        for (int i = 0; i < 10; i++) {
+                            utility_baseline_hum += utility_hum_history[i];
+                        }
+                        utility_baseline_hum /= 10.0;
+                        char logMessage[256];
+                        snprintf(logMessage, sizeof(logMessage), "[UT Vent] Cycle end: Hum=%.1f%%, Bursts=%d, Baseline=%.1f%%", currentData.utilityHumidity, utility_burst_count, utility_baseline_hum);
+                        logEvent(logMessage);
+                        return;  // izhod
+                    } else {
+                        // Prilagodi
+                        if (avg_rate > 1.0) fan_off_duration *= 1.2;
+                        else if (avg_rate < 0.2) fan_off_duration *= 0.8;
+                    }
+                }
+                // --- Zaženi burst ---
+                digitalWrite(PIN_UTILITY_ODVOD, HIGH);
+                currentData.utilityFan = true;
+                burst_start = millis();
+                in_burst = true;
+                utility_burst_count++;
+                char logMessage[256];
+                snprintf(logMessage, sizeof(logMessage), "[UT Vent] Burst %d start: Hum=%.1f%%, Duration=%lu s", utility_burst_count, currentData.utilityHumidity, fan_duration/1000);
+                logEvent(logMessage);
+            }
         } else if (millis() - burst_start >= fan_duration) {
-            // Konec bursta, začni off
             digitalWrite(PIN_UTILITY_ODVOD, LOW);
             currentData.utilityFan = false;
             off_start = millis();
@@ -274,36 +304,6 @@ void controlUtility() {
             char logMessage[256];
             snprintf(logMessage, sizeof(logMessage), "[UT Vent] Burst %d end: Hum=%.1f%%", utility_burst_count, currentData.utilityHumidity);
             logEvent(logMessage);
-        } else if (!in_burst && millis() - off_start >= fan_off_duration) {
-            // Preveri za ponovitev
-            float rate1 = (utility_hum_history[9] - utility_hum_history[8]) / 1.0;
-            float rate2 = (utility_hum_history[8] - utility_hum_history[7]) / 1.0;
-            float rate3 = (utility_hum_history[7] - utility_hum_history[6]) / 1.0;
-            float avg_rate = (rate1 + rate2 + rate3) / 3.0;
-            if (currentData.utilityHumidity > settings.humThreshold && utility_burst_count < 3) {
-                // Prilagodi off
-                if (avg_rate > 1.0) {
-                    fan_off_duration *= 1.2;
-                } else if (avg_rate < 0.2) {
-                    fan_off_duration *= 0.8;
-                }
-                // Ponovi burst
-            } else {
-                // Konec cikla
-                utility_drying_mode = false;
-                utility_cycle_mode = 0;
-                utility_burst_count = 0;
-                expected_end_timeUT = 0; // Reset na 0 ko se cikel konča
-                // Reset baseline
-                utility_baseline_hum = 0;
-                for (int i = 0; i < 10; i++) {
-                    utility_baseline_hum += utility_hum_history[i];
-                }
-                utility_baseline_hum /= 10.0;
-                char logMessage[256];
-                snprintf(logMessage, sizeof(logMessage), "[UT Vent] Cycle end: Hum=%.1f%%, Bursts=%d, Baseline=%.1f%%", currentData.utilityHumidity, utility_burst_count, utility_baseline_hum);
-                logEvent(logMessage);
-            }
         }
     }
 
@@ -390,6 +390,8 @@ void controlBathroom() {
     static bool lastLightState2 = false;
     static bool isLongPress = false;
     static unsigned long lastSensorCheck = 0;
+
+    static unsigned long off_start = 0;
 
     bool currentButtonState = currentData.bathroomButton;
     bool currentLightState1 = currentData.bathroomLight1;
@@ -492,6 +494,7 @@ void controlBathroom() {
                 drying_mode = true;
                 cycle_mode = mode;
                 burst_count = 0;
+                off_start = millis() - (settings.fanOffDurationKop * 1000);
                 // Calculate expected end time
                 time_t now = myTZ.now();
                 unsigned long total_seconds = (3 * (360 * (cycle_mode == 1 ? 1.0 : cycle_mode == 2 ? 0.8 : 0.5) * 1000 / 1000)) + (2 * (settings.fanOffDurationKop * 1000 / 1000));
@@ -519,6 +522,7 @@ void controlBathroom() {
                 drying_mode = true;
                 cycle_mode = mode;
                 burst_count = 0;
+                off_start = millis() - (settings.fanOffDurationKop * 1000);
                 char logMessage[256];
                 snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Trigger: Trend=%.1f%%, Mode=%d", trend, mode);
                 logEvent(logMessage);
@@ -538,7 +542,6 @@ void controlBathroom() {
     // Expected end time is calculated once at trigger, just copy to currentData
 
     static unsigned long burst_start = 0;
-    static unsigned long off_start = 0;
     static bool in_burst = false;
 
     if (drying_mode) {
@@ -551,17 +554,38 @@ void controlBathroom() {
         }
 
         if (!in_burst) {
-            // Začni burst
-            digitalWrite(PIN_KOPALNICA_ODVOD, HIGH);
-            currentData.bathroomFan = true;
-            burst_start = millis();
-            in_burst = true;
-            burst_count++;
-            char logMessage[256];
-            snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Burst %d start: Hum=%.1f%%, Duration=%lu s", burst_count, currentData.bathroomHumidity, fan_duration/1000);
-            logEvent(logMessage);
+            bool ready = (burst_count == 0) || (millis() - off_start >= fan_off_duration);
+            if (ready) {
+                // --- Preveri ponovitev / konec (za burst_count >= 1) ---
+                if (burst_count >= 1) {
+                    float rate1 = (hum_history[2] - hum_history[1]) / 1.0;
+                    float rate2 = (hum_history[1] - hum_history[0]) / 1.0;
+                    float avg_rate = (rate1 + rate2) / 2.0;
+                    if (!(currentData.bathroomHumidity > 65.0 && burst_count < 3)) {
+                        // Konec cikla
+                        drying_mode = false; cycle_mode = 0; burst_count = 0;
+                        baseline_hum = 45.0; hum_history[0]=45.0; hum_history[1]=45.0; hum_history[2]=45.0;
+                        char logMessage[256];
+                        snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Cycle end: Hum=%.1f%%, Bursts=%d, Baseline=%.1f%%", currentData.bathroomHumidity, burst_count, baseline_hum);
+                        logEvent(logMessage);
+                        return;  // izhod
+                    } else {
+                        // Prilagodi
+                        if (avg_rate > 1.0) fan_off_duration *= 1.2;
+                        else if (avg_rate < 0.2) fan_off_duration *= 0.8;
+                    }
+                }
+                // --- Zaženi burst ---
+                digitalWrite(PIN_KOPALNICA_ODVOD, HIGH);
+                currentData.bathroomFan = true;
+                burst_start = millis();
+                in_burst = true;
+                burst_count++;
+                char logMessage[256];
+                snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Burst %d start: Hum=%.1f%%, Duration=%lu s", burst_count, currentData.bathroomHumidity, fan_duration/1000);
+                logEvent(logMessage);
+            }
         } else if (millis() - burst_start >= fan_duration) {
-            // Konec bursta, začni off
             digitalWrite(PIN_KOPALNICA_ODVOD, LOW);
             currentData.bathroomFan = false;
             off_start = millis();
@@ -569,34 +593,6 @@ void controlBathroom() {
             char logMessage[256];
             snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Burst %d end: Hum=%.1f%%", burst_count, currentData.bathroomHumidity);
             logEvent(logMessage);
-        } else if (!in_burst && millis() - off_start >= fan_off_duration) {
-            // Preveri za ponovitev
-            float rate1 = (hum_history[2] - hum_history[1]) / 1.0;
-            float rate2 = (hum_history[1] - hum_history[0]) / 1.0;
-            float avg_rate = (rate1 + rate2) / 2.0; // samo 2 rate za 3 branja
-            if (currentData.bathroomHumidity > settings.humThreshold && burst_count < 3) {
-                // Prilagodi off
-                if (avg_rate > 1.0) {
-                    fan_off_duration *= 1.2;
-                } else if (avg_rate < 0.2) {
-                    fan_off_duration *= 0.8;
-                }
-                // Ponovi burst
-            } else {
-                // Konec cikla
-                drying_mode = false;
-                cycle_mode = 0;
-                burst_count = 0;
-                expected_end_timeKOP = 0; // Reset na 0 ko se cikel konča
-                // Reset baseline in history
-                baseline_hum = 45.0;
-                hum_history[0] = 45.0;
-                hum_history[1] = 45.0;
-                hum_history[2] = 45.0;
-                char logMessage[256];
-                snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Cycle end: Hum=%.1f%%, Bursts=%d, Baseline=%.1f%%", currentData.bathroomHumidity, burst_count, baseline_hum);
-                logEvent(logMessage);
-            }
         }
     }
 
