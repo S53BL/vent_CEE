@@ -67,6 +67,66 @@ void hexdumpCRCData(const uint8_t* data, size_t len, const char* label) {
   LOG_INFO("Hexdump", "=== END %s ===", label);
 }
 
+void initCurrentData() {
+  // Inicializacija currentData na privzete vrednosti
+  currentData.supply5V = 0.0f;
+  currentData.supply3V3 = 0.0f;
+  currentData.livingCO2 = 0;
+  currentData.livingTemp = 0.0f;
+  currentData.livingHumidity = 0.0f;
+  currentData.externalTemp = 0.0f;
+  currentData.externalHumidity = 0.0f;
+  currentData.externalPressure = 0.0f;
+  currentData.externalLight = 0.0f;
+  currentData.bathroomTemp = 0.0f;
+  currentData.bathroomHumidity = 0.0f;
+  currentData.bathroomPressure = 0.0f;
+  currentData.utilityTemp = 0.0f;
+  currentData.utilityHumidity = 0.0f;
+  currentData.currentPower = 0.0f;
+  currentData.energyConsumption = 0.0f;
+  currentData.livingRoomDutyCycle = 0.0f;
+  currentData.livingExhaustLevel = 0;
+  currentData.bathroomFan = false;
+  currentData.utilityFan = false;
+  currentData.wcFan = false;
+  currentData.commonIntake = false;
+  currentData.livingIntake = false;
+  currentData.bathroomButton = false;
+  currentData.utilitySwitch = false;
+  currentData.windowSensor1 = false;
+  currentData.windowSensor2 = false;
+  currentData.bathroomLight1 = false;
+  currentData.bathroomLight2 = false;
+  currentData.utilityLight = false;
+  currentData.wcLight = false;
+  currentData.manualTriggerWC = false;
+  currentData.disableBathroom = false;
+  currentData.manualTriggerBathroom = false;
+  currentData.manualTriggerBathroomDrying = false;
+  currentData.manualTriggerUtility = false;
+  currentData.manualTriggerUtilityDrying = false;
+  currentData.disableUtility = false;
+  currentData.disableLivingRoom = false;
+  currentData.manualTriggerLivingRoom = false;
+  currentData.disableWc = false;
+  currentData.errorFlags = 0;
+  currentData.dewError = 0;
+  currentData.timestamp = 0;
+  currentData.utilityDryingMode = false;
+  currentData.bathroomDryingMode = false;
+  currentData.utilityCycleMode = 0;
+  currentData.bathroomCycleMode = 0;
+  
+  for (int i = 0; i < 6; i++) {
+    currentData.offTimes[i] = 0;
+    currentData.previousFans[i] = 0;
+  }
+  for (int i = 0; i < 8; i++) {
+    currentData.previousInputs[i] = 0;
+  }
+}
+
 void initDefaults() {
   // Tovarniške nastavitve - prenešene iz config.h za poenostavitev vzdrževanja
   settings.humThreshold = 65.0f;
@@ -103,9 +163,9 @@ void initDefaults() {
 
   settings.lastKnownUnixTime = 0;
 
-  // Inicializacija currentData
-  currentData.supply5V = 0.0f;
-  currentData.supply3V3 = 0.0f;
+  // Debug: izpis privzetih vrednosti
+  LOG_INFO("Settings", "Defaults: co2ThresholdLowDS=%d, co2ThresholdHighDS=%d", 
+           settings.co2ThresholdLowDS, settings.co2ThresholdHighDS);
 }
 
 void loadSettings() {

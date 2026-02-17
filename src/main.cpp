@@ -251,6 +251,9 @@ void setup() {
     // Load settings from NVS
     loadSettings();
 
+    // Initialize currentData to default values
+    initCurrentData();
+
     // Setup and start web server
     setupWebServer();
 

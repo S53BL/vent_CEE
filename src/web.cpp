@@ -1909,6 +1909,17 @@ void handlePostSettings(AsyncWebServerRequest *request) {
   newSettings.humExtremeHighDS = request->getParam("humExtremeHighDS", true)->value().toFloat();
   newSettings.co2ThresholdLowDS = request->getParam("co2ThresholdLowDS", true)->value().toInt();
   newSettings.co2ThresholdHighDS = request->getParam("co2ThresholdHighDS", true)->value().toInt();
+  
+  // Validacija minimalnih vrednosti za CO2
+  if (newSettings.co2ThresholdHighDS < 400) {
+    newSettings.co2ThresholdHighDS = 1200;
+    LOG_WARN("Web", "co2ThresholdHighDS < 400, nastavljeno na 1200");
+  }
+  if (newSettings.co2ThresholdLowDS < 400) {
+    newSettings.co2ThresholdLowDS = 400;
+    LOG_WARN("Web", "co2ThresholdLowDS < 400, nastavljeno na 400");
+  }
+  
   newSettings.incrementPercentLowDS = request->getParam("incrementPercentLowDS", true)->value().toFloat();
   newSettings.incrementPercentHighDS = request->getParam("incrementPercentHighDS", true)->value().toFloat();
   newSettings.incrementPercentTempDS = request->getParam("incrementPercentTempDS", true)->value().toFloat();

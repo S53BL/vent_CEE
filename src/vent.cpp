@@ -1,6 +1,7 @@
 // vent.cpp - Fan control implementation for CEE
 
 #include <Arduino.h>
+#include <cmath>
 #include "config.h"
 #include "globals.h"
 #include "logging.h"

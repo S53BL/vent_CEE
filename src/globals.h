@@ -19,6 +19,7 @@ void loadSettings();
 void saveSettings();
 uint16_t calculateCRC(const uint8_t* data, size_t len);
 void initDefaults();
+void initCurrentData();
 bool isIdle(void);
 
 extern Adafruit_BME280 *bme280;
