@@ -281,7 +281,7 @@ void controlUtility() {
                     logEvent(logMessage);
                     if (!(currentData.utilityHumidity > 65.0 && utility_burst_count < 3)) {
                         // Konec cikla
-                        utility_drying_mode = false; utility_cycle_mode = 0; utility_burst_count = 0;
+                        utility_drying_mode = false; utility_cycle_mode = 0;
                         utility_baseline_hum = 0;
                         for (int i = 0; i < 10; i++) {
                             utility_baseline_hum += utility_hum_history[i];
@@ -291,6 +291,7 @@ void controlUtility() {
                         char logMessage[256];
                         snprintf(logMessage, sizeof(logMessage), "[UT Vent] Cycle end: Hum=%.1f%%, Bursts=%d, Baseline=%.1f%%, Reason=%s", currentData.utilityHumidity, utility_burst_count, utility_baseline_hum, reason);
                         logEvent(logMessage);
+                        utility_burst_count = 0;
                         expected_end_timeUT = 0;
                         currentData.utilityExpectedEndTime = 0;
                         return;  // izhod
@@ -595,12 +596,13 @@ void controlBathroom() {
                     logEvent(logMessage);
                     if (!(currentData.bathroomHumidity > 65.0 && burst_count < 3)) {
                         // Konec cikla
-                        drying_mode = false; cycle_mode = 0; burst_count = 0;
+                        drying_mode = false; cycle_mode = 0;
                         baseline_hum = 45.0; hum_history[0]=45.0; hum_history[1]=45.0; hum_history[2]=45.0;
                         const char* reason = (currentData.bathroomHumidity <= 65.0) ? "Hum low" : "Bursts max";
                         char logMessage[256];
                         snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Cycle end: Hum=%.1f%%, Bursts=%d, Baseline=%.1f%%, Reason=%s", currentData.bathroomHumidity, burst_count, baseline_hum, reason);
                         logEvent(logMessage);
+                        burst_count = 0;
                         expected_end_timeKOP = 0;
                         currentData.bathroomExpectedEndTime = 0;
                         return;  // izhod
