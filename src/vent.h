@@ -12,5 +12,6 @@ void controlUtility();
 void controlBathroom();
 void controlLivingRoom();
 void calculatePower();
+String getDutyCycleBreakdown();
 
 #endif // VENT_H

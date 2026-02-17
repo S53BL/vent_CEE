@@ -6,6 +6,7 @@
 #include "system.h"
 #include "message_fields.h"
 #include "help_html.h"
+#include "vent.h"
 
 // Helper functions for root page
 String formatUptime(unsigned long seconds) {
@@ -222,7 +223,6 @@ void handleManualControl(AsyncWebServerRequest *request, uint8_t *data, size_t l
 }
 
 void handleSensorData(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
-    LOG_DEBUG("HTTP", "handleSensorData called - index=%d, len=%d, total=%d", index, len, total);
     static String body;
     if (index == 0) body = "";
     for (size_t i = 0; i < len; i++) {
@@ -243,7 +243,13 @@ void handleSensorData(AsyncWebServerRequest *request, uint8_t *data, size_t len,
         externalData.externalPressure = doc[FIELD_EXT_PRESS] | 0.0f;       // external pressure
         externalData.livingTempDS = doc[FIELD_DS_TEMP] | 0.0f;           // ds temp (living room)
         externalData.livingHumidityDS = doc[FIELD_DS_HUM] | 0.0f;       // ds humidity
-        externalData.livingCO2 = doc[FIELD_DS_CO2] | 0;                 // ds CO2
+        // Eksplicitno rokovanje z null vrednostjo - ArduinoJson | 0 ne deluje pravilno za null
+        JsonVariant co2Variant = doc[FIELD_DS_CO2];
+        if (co2Variant.is<uint16_t>()) {
+            externalData.livingCO2 = co2Variant.as<uint16_t>();
+        } else {
+            externalData.livingCO2 = 0;
+        }
         externalData.weatherIcon = doc[FIELD_WEATHER_ICON] | 0;          // weather icon
         externalData.seasonCode = doc[FIELD_SEASON_CODE] | 0;            // season code
         externalData.timestamp = doc[FIELD_TIMESTAMP] | 0;                 // timestamp
@@ -1421,19 +1427,6 @@ void handleRoot(AsyncWebServerRequest *request) {
             </div>
         </div>
 
-        <!-- DS Duty Cycle Card -->
-        <div class="card">
-            <h2>DS Duty Cycle Parametri</h2>
-            <div class="status-item">
-                <span class="status-label">Razlog za level:</span>
-                <span class="status-value">)rawliteral" + getFanLevelReason() + R"rawliteral(</span>
-            </div>
-            <div class="status-item">
-                <span class="status-label">Status parametrov:</span>
-                <span class="status-value">)rawliteral" + getDutyCycleParamStatus() + R"rawliteral(</span>
-            </div>
-        </div>
-
         <!-- External Data Card -->
         <div class="card">
             <h2>Zunanji podatki</h2>
@@ -1550,6 +1543,19 @@ void handleRoot(AsyncWebServerRequest *request) {
                     <span class="status-value" id="status-kop-dew">)rawliteral" + (kopDewStatus.isOnline ? "ONLINE" : "OFFLINE") + R"rawliteral(</span>
                 </div>
             </div>
+        </div>
+
+        <!-- DS Duty Cycle Card - Full width at bottom -->
+        <div class="card" style="grid-column: 1 / -1;">
+            <h2>DS Duty Cycle Parametri</h2>
+            <div class="status-item">
+                <span class="status-label">Razlog za level:</span>
+                <span class="status-value">)rawliteral" + getFanLevelReason() + R"rawliteral(</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Podroben izračun:</span>
+            </div>
+            <pre style="font-size: 14px; white-space: pre-wrap; word-wrap: break-word;">)rawliteral" + getDutyCycleBreakdown() + R"rawliteral(</pre>
         </div>
     </div>
 

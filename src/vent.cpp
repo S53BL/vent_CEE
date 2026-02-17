@@ -231,8 +231,14 @@ void controlUtility() {
                 utility_burst_count = 0;
                 float off_factor_temp = (mode == 1) ? 1.0 : (mode == 2) ? 1.5 : 2.0;
                 off_start = millis() - (settings.fanOffDuration * off_factor_temp * 1000);
+                // Calculate expected end time once at trigger
+                time_t now = myTZ.now();
+                unsigned long total_seconds = (3 * (base_fan_duration_UT * (mode == 1 ? 1.0 : mode == 2 ? 0.6 : 0.3) / 1000)) + (2 * (settings.fanOffDuration * (mode == 1 ? 1.0 : mode == 2 ? 1.5 : 2.0) * 1000 / 1000));
+                expected_end_timeUT = now + total_seconds;
+                char expectedTimeStr[20];
+                strftime(expectedTimeStr, sizeof(expectedTimeStr), "%H:%M:%S", localtime(&expected_end_timeUT));
                 char logMessage[256];
-                snprintf(logMessage, sizeof(logMessage), "[UT Vent] Trigger: Trend=%.1f%%, Mode=%d", trend, mode);
+                snprintf(logMessage, sizeof(logMessage), "[UT Vent] Trigger: Trend=%.1f%%, Mode=%d, End: %s", trend, mode, expectedTimeStr);
                 logEvent(logMessage);
             } else {
                 char logMessage[256];
@@ -265,10 +271,14 @@ void controlUtility() {
             if (ready) {
                 // --- Preveri ponovitev / konec (za utility_burst_count >= 1) ---
                 if (utility_burst_count >= 1) {
+                    // Off end: log humidity and rate
                     float rate1 = (utility_hum_history[9] - utility_hum_history[8]) / 1.0;
                     float rate2 = (utility_hum_history[8] - utility_hum_history[7]) / 1.0;
                     float rate3 = (utility_hum_history[7] - utility_hum_history[6]) / 1.0;
                     float avg_rate = (rate1 + rate2 + rate3) / 3.0;
+                    char logMessage[256];
+                    snprintf(logMessage, sizeof(logMessage), "[UT Vent] Off end: Hum=%.1f%%, Avg_rate=%.2f", currentData.utilityHumidity, avg_rate);
+                    logEvent(logMessage);
                     if (!(currentData.utilityHumidity > 65.0 && utility_burst_count < 3)) {
                         // Konec cikla
                         utility_drying_mode = false; utility_cycle_mode = 0; utility_burst_count = 0;
@@ -277,14 +287,21 @@ void controlUtility() {
                             utility_baseline_hum += utility_hum_history[i];
                         }
                         utility_baseline_hum /= 10.0;
+                        const char* reason = (currentData.utilityHumidity <= 65.0) ? "Hum low" : "Bursts max";
                         char logMessage[256];
-                        snprintf(logMessage, sizeof(logMessage), "[UT Vent] Cycle end: Hum=%.1f%%, Bursts=%d, Baseline=%.1f%%", currentData.utilityHumidity, utility_burst_count, utility_baseline_hum);
+                        snprintf(logMessage, sizeof(logMessage), "[UT Vent] Cycle end: Hum=%.1f%%, Bursts=%d, Baseline=%.1f%%, Reason=%s", currentData.utilityHumidity, utility_burst_count, utility_baseline_hum, reason);
                         logEvent(logMessage);
+                        expected_end_timeUT = 0;
+                        currentData.utilityExpectedEndTime = 0;
                         return;  // izhod
                     } else {
                         // Prilagodi
                         if (avg_rate > 1.0) fan_off_duration *= 1.2;
                         else if (avg_rate < 0.2) fan_off_duration *= 0.8;
+                        // Continue: log adjustment
+                        char logMessage[256];
+                        snprintf(logMessage, sizeof(logMessage), "[UT Vent] Continue: Adjust off to %lu s (rate=%.2f)", fan_off_duration/1000, avg_rate);
+                        logEvent(logMessage);
                     }
                 }
                 // --- Zaženi burst ---
@@ -304,6 +321,9 @@ void controlUtility() {
             in_burst = false;
             char logMessage[256];
             snprintf(logMessage, sizeof(logMessage), "[UT Vent] Burst %d end: Hum=%.1f%%", utility_burst_count, currentData.utilityHumidity);
+            logEvent(logMessage);
+            // Off start: log duration
+            snprintf(logMessage, sizeof(logMessage), "[UT Vent] Off start: Duration=%lu s", fan_off_duration/1000);
             logEvent(logMessage);
         }
     }
@@ -524,8 +544,15 @@ void controlBathroom() {
                 cycle_mode = mode;
                 burst_count = 0;
                 off_start = millis() - (settings.fanOffDurationKop * 1000);
+                // Calculate expected end time once at trigger
+                time_t now = myTZ.now();
+                unsigned long total_seconds = (3 * (360 * (mode == 1 ? 1.0 : mode == 2 ? 0.8 : 0.5) * 1000 / 1000)) + (2 * (settings.fanOffDurationKop * 1000 / 1000));
+                time_t expected_end = now + total_seconds;
+                expected_end_timeKOP = expected_end;
+                char expectedTimeStr[20];
+                strftime(expectedTimeStr, sizeof(expectedTimeStr), "%H:%M:%S", localtime(&expected_end));
                 char logMessage[256];
-                snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Trigger: Trend=%.1f%%, Mode=%d", trend, mode);
+                snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Trigger: Trend=%.1f%%, Mode=%d, End: %s", trend, mode, expectedTimeStr);
                 logEvent(logMessage);
             } else {
                 char logMessage[256];
@@ -559,21 +586,32 @@ void controlBathroom() {
             if (ready) {
                 // --- Preveri ponovitev / konec (za burst_count >= 1) ---
                 if (burst_count >= 1) {
+                    // Off end: log humidity and rate
                     float rate1 = (hum_history[2] - hum_history[1]) / 1.0;
                     float rate2 = (hum_history[1] - hum_history[0]) / 1.0;
                     float avg_rate = (rate1 + rate2) / 2.0;
+                    char logMessage[256];
+                    snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Off end: Hum=%.1f%%, Avg_rate=%.2f", currentData.bathroomHumidity, avg_rate);
+                    logEvent(logMessage);
                     if (!(currentData.bathroomHumidity > 65.0 && burst_count < 3)) {
                         // Konec cikla
                         drying_mode = false; cycle_mode = 0; burst_count = 0;
                         baseline_hum = 45.0; hum_history[0]=45.0; hum_history[1]=45.0; hum_history[2]=45.0;
+                        const char* reason = (currentData.bathroomHumidity <= 65.0) ? "Hum low" : "Bursts max";
                         char logMessage[256];
-                        snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Cycle end: Hum=%.1f%%, Bursts=%d, Baseline=%.1f%%", currentData.bathroomHumidity, burst_count, baseline_hum);
+                        snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Cycle end: Hum=%.1f%%, Bursts=%d, Baseline=%.1f%%, Reason=%s", currentData.bathroomHumidity, burst_count, baseline_hum, reason);
                         logEvent(logMessage);
+                        expected_end_timeKOP = 0;
+                        currentData.bathroomExpectedEndTime = 0;
                         return;  // izhod
                     } else {
                         // Prilagodi
                         if (avg_rate > 1.0) fan_off_duration *= 1.2;
                         else if (avg_rate < 0.2) fan_off_duration *= 0.8;
+                        // Continue: log adjustment
+                        char logMessage[256];
+                        snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Continue: Adjust off to %lu s (rate=%.2f)", fan_off_duration/1000, avg_rate);
+                        logEvent(logMessage);
                     }
                 }
                 // --- Zaženi burst ---
@@ -593,6 +631,9 @@ void controlBathroom() {
             in_burst = false;
             char logMessage[256];
             snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Burst %d end: Hum=%.1f%%", burst_count, currentData.bathroomHumidity);
+            logEvent(logMessage);
+            // Off start: log duration
+            snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Off start: Duration=%lu s", fan_off_duration/1000);
             logEvent(logMessage);
         }
     }
@@ -1068,6 +1109,125 @@ void calculatePower() {
     if (currentData.livingExhaustLevel == 1) currentData.currentPower += FAN_POWER_LIVING_EXHAUST_1;
     else if (currentData.livingExhaustLevel == 2) currentData.currentPower += FAN_POWER_LIVING_EXHAUST_2;
     else if (currentData.livingExhaustLevel == 3) currentData.currentPower += FAN_POWER_LIVING_EXHAUST_3;
+}
+
+// Helper function: Get duty cycle breakdown for web display
+String getDutyCycleBreakdown() {
+    String breakdown = "";
+    float basePercent = settings.cycleActivePercentDS;
+    
+    breakdown += "Trenutni duty cycle: " + String(currentData.livingRoomDutyCycle, 1) + "% (končni izračun)\n";
+    breakdown += "Osnova (base): " + String(basePercent) + "% (iz cycleActivePercentDS, vedno aktivna)\n";
+
+    // Preveri veljavnost senzorjev
+    bool humidityValid = !isnan(currentData.livingHumidity) && currentData.livingHumidity >= 0 && currentData.livingHumidity <= 100;
+    bool co2Valid = !isnan(currentData.livingCO2) && currentData.livingCO2 >= 0 && currentData.livingCO2 <= 10000;
+    bool tempValid = !isnan(currentData.livingTemp) && currentData.livingTemp >= -50 && currentData.livingTemp <= 100;
+    bool externalTempValid = !isnan(currentData.externalTemp) && currentData.externalTemp >= -50 && currentData.externalTemp <= 100;
+
+    // Humidity prirastek
+    float humIncrement = 0.0;
+    if (humidityValid) {
+        if (currentData.livingHumidity >= settings.humThresholdHighDS) {
+            humIncrement = settings.incrementPercentHighDS;
+        } else if (currentData.livingHumidity >= settings.humThresholdDS) {
+            humIncrement = settings.incrementPercentLowDS;
+        }
+    }
+    String humStatus = humIncrement > 0 ? "active" : "inactive";
+    breakdown += "Hum prirastek: " + String(humIncrement) + "% (" + humStatus + ") - ";
+    if (humidityValid) {
+        breakdown += "ker hum=" + String(currentData.livingHumidity, 1) + "% ";
+        if (currentData.livingHumidity >= settings.humThresholdHighDS) {
+            breakdown += "> humThresholdHighDS=" + String(settings.humThresholdHighDS) + "% (uporabi incrementPercentHighDS=" + String(settings.incrementPercentHighDS) + "%)\n";
+        } else if (currentData.livingHumidity >= settings.humThresholdDS) {
+            breakdown += "> humThresholdDS=" + String(settings.humThresholdDS) + "% (uporabi incrementPercentLowDS=" + String(settings.incrementPercentLowDS) + "%)\n";
+        } else {
+            breakdown += "< humThresholdDS=" + String(settings.humThresholdDS) + "% (ni prirastka)\n";
+        }
+    } else {
+        breakdown += "neveljavni podatki\n";
+    }
+
+    // CO2 prirastek
+    float co2Increment = 0.0;
+    String co2Level = "none";
+    if (co2Valid) {
+        if (currentData.livingCO2 >= settings.co2ThresholdHighDS) {
+            co2Increment = settings.incrementPercentHighDS;
+            co2Level = "high";
+        } else if (currentData.livingCO2 >= settings.co2ThresholdLowDS) {
+            co2Increment = settings.incrementPercentLowDS;
+            co2Level = "low";
+        }
+    }
+    String co2Status = co2Increment > 0 ? "active" : "inactive";
+    breakdown += "CO2 prirastek: " + String(co2Increment) + "% (" + co2Status + ", nivo: " + co2Level + ") - ";
+    if (co2Valid) {
+        breakdown += "ker CO2=" + String(currentData.livingCO2, 0) + " ";
+        if (currentData.livingCO2 >= settings.co2ThresholdHighDS) {
+            breakdown += "> co2ThresholdHighDS=" + String(settings.co2ThresholdHighDS) + "\n";
+        } else if (currentData.livingCO2 >= settings.co2ThresholdLowDS) {
+            breakdown += "> co2ThresholdLowDS=" + String(settings.co2ThresholdLowDS) + "\n";
+        } else {
+            breakdown += "< co2ThresholdLowDS=" + String(settings.co2ThresholdLowDS) + "\n";
+        }
+    } else {
+        breakdown += "neveljavni podatki\n";
+    }
+
+    // Temperature prirastek
+    float tempIncrement = 0.0;
+    bool tempActive = false;
+    bool isNND = isNNDTime();
+    if (!isNND && tempValid && externalTempValid) {
+        if ((currentData.livingTemp > settings.tempIdealDS && currentData.externalTemp < currentData.livingTemp) ||
+            (currentData.livingTemp < settings.tempIdealDS && currentData.externalTemp > currentData.livingTemp)) {
+            tempIncrement = settings.incrementPercentTempDS;
+            tempActive = true;
+        }
+    }
+    String tempStatus = tempActive ? "active" : "inactive";
+    breakdown += "Temp prirastek: " + String(tempIncrement) + "% (" + tempStatus + ") - ";
+    if (tempValid && externalTempValid) {
+        breakdown += "ker internalTemp=" + String(currentData.livingTemp, 1) + "C, externalTemp=" + String(currentData.externalTemp, 1) + "C, tempIdealDS=" + String(settings.tempIdealDS) + "C";
+        if (isNND) {
+            breakdown += ", NND=True (temperatura ne uposteva)\n";
+        } else {
+            breakdown += "\n";
+        }
+    } else {
+        breakdown += "neveljavni podatki ali NND\n";
+    }
+
+    // Adverse pogoji (zmanjšanje za 50%)
+    bool adverseConditions = currentData.externalHumidity > settings.humExtremeHighDS ||
+                            currentData.externalTemp > settings.tempExtremeHighDS ||
+                            currentData.externalTemp < settings.tempExtremeLowDS;
+    String adverseStatus = adverseConditions ? "YES (active)" : "NO (inactive)";
+    breakdown += "Adverse pogoji: " + adverseStatus + " - ";
+    breakdown += "externalTemp=" + String(currentData.externalTemp, 1) + "C, externalHum=" + String(currentData.externalHumidity, 1) + "%";
+    if (adverseConditions) {
+        breakdown += " -> zmanjšanje za 50%";
+    }
+    breakdown += "\n";
+
+    // Skupni izračun
+    breakdown += "Skupni izračun: base(" + String(basePercent) + "%) + hum(" + String(humIncrement) + "%) + CO2(" + String(co2Increment) + "%) + temp(" + String(tempIncrement) + "%)";
+    if (adverseConditions) {
+        breakdown += " -> *0.5 (adverse) = " + String(currentData.livingRoomDutyCycle, 1) + "%";
+    }
+    breakdown += "\n";
+
+    // Opombe o napakah
+    if (currentData.errorFlags & ERR_DEW) {
+        breakdown += "Opomba: ERR_DEW aktivna - blokira nekatere prirastke\n";
+    }
+    if (!externalDataValid) {
+        breakdown += "Opomba: externalDataValid=False - ni zunanjih podatkov\n";
+    }
+
+    return breakdown;
 }
 
 // vent.cpp
