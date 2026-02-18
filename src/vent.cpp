@@ -126,7 +126,9 @@ void controlWC() {
     }
 
     char logMessage[256];
-    if ((manualTrigger || (semiAutomaticTrigger && settings.dndAllowableSemiautomatic)) && !fanActive) {
+    // Semi-auto fires outside DND always, during DND only if allowed
+    // (semiAutomaticTrigger already handles this correctly via !isDNDTime() || dndAllowableSemiautomatic)
+    if ((manualTrigger || semiAutomaticTrigger) && !fanActive) {
         digitalWrite(PIN_WC_ODVOD, HIGH);
         fanStartTime = millis();
         fanActive = true;
@@ -139,8 +141,10 @@ void controlWC() {
         if (manualTrigger) {
             currentData.manualTriggerWC = false;
         }
-    } else if (semiAutomaticTrigger && isDNDTime() && !settings.dndAllowableSemiautomatic) {
-        snprintf(logMessage, sizeof(logMessage), "[WC Vent] OFF: SemiAuto Trigg zavrnjen (DND)");
+    }
+    // Log DND blocked semi-auto (potreben ločen check ker semiAutomaticTrigger že filtrira DND)
+    if (lastLightState && !currentLightState && isDNDTime() && !settings.dndAllowableSemiautomatic) {
+        snprintf(logMessage, sizeof(logMessage), "[WC Vent] SemiAuto Trigg zavrnjen (DND)");
         logEvent(logMessage);
     }
 
@@ -164,6 +168,8 @@ void controlUtility() {
     static int utility_burst_count = 0;
     static float utility_baseline_hum = 45.0; // privzeto 45 %
     static unsigned long off_start = 0;
+    static unsigned long burst_start = 0;      // premaknjena sem za dostop v disable bloku
+    static bool in_burst = false;              // premaknjena sem za dostop v disable bloku
 
     // Branje senzorja (vsakih 60 s, ampak klicano iz loop)
     // Predpostavi, da readSensors() posodobi currentData.utilityHumidity itd.
@@ -186,44 +192,49 @@ void controlUtility() {
         utility_drying_mode = false;
         utility_cycle_mode = 0;
         utility_burst_count = 0;
+        in_burst = false;             // reset burst stanja pri disable
+        currentData.offTimes[1] = 0;  // počisti off time
         return;
+    }
+
+    // Ignoriramo dupliciran drying trigger med aktivnim ciklom
+    if (utility_drying_mode && currentData.manualTriggerUtilityDrying) {
+        char logMessage[256];
+        snprintf(logMessage, sizeof(logMessage), "[UT Vent] Drying trigger ignored - ze v drying ciklu");
+        logEvent(logMessage);
+        currentData.manualTriggerUtilityDrying = false;
     }
 
     // Čakanje na trigger
     if (!utility_drying_mode && utility_cycle_mode == 0) {
-        // Check for manual drying trigger
+        // Določi trigger: manual ima prednost pred auto
+        bool trigger_fired = false;
+        bool is_manual_drying = false;
+        float auto_trend = 0.0f;
+
         if (currentData.manualTriggerUtilityDrying) {
-            int mode = determineCycleMode(currentData.utilityTemp, currentData.utilityHumidity, ERR_SHT41);
-            if (mode > 0) {
-                utility_drying_mode = true;
-                utility_cycle_mode = mode;
-                utility_burst_count = 0;
-                float off_factor_temp = (mode == 1) ? 1.0 : (mode == 2) ? 1.5 : 2.0;
-                off_start = millis() - (settings.fanOffDuration * off_factor_temp * 1000);
-                // Calculate expected end time once at trigger
-                time_t now = myTZ.now();
-                unsigned long total_seconds = (3 * (base_fan_duration_UT * (mode == 1 ? 1.0 : mode == 2 ? 0.6 : 0.3) / 1000)) + (2 * (settings.fanOffDuration * (mode == 1 ? 1.0 : mode == 2 ? 1.5 : 2.0) * 1000 / 1000));
-                expected_end_timeUT = now + total_seconds;
-                char expectedTimeStr[20];
-                strftime(expectedTimeStr, sizeof(expectedTimeStr), "%H:%M:%S", localtime(&expected_end_timeUT));
-                char logMessage[256];
-                snprintf(logMessage, sizeof(logMessage), "[UT Vent] Manual drying trigger: Mode=%d End: %s", mode, expectedTimeStr);
-                logEvent(logMessage);
+            if (!isDNDTime() || settings.dndAllowableManual) {
+                trigger_fired = true;
+                is_manual_drying = true;
             } else {
                 char logMessage[256];
-                snprintf(logMessage, sizeof(logMessage), "[UT Vent] Manual drying trigger blocked: Mode=%d", mode);
+                snprintf(logMessage, sizeof(logMessage), "[UT Vent] Manual drying trigger zavrnjen (DND)");
                 logEvent(logMessage);
             }
             currentData.manualTriggerUtilityDrying = false;
-            return;
+        } else {
+            // Automatic trigger check
+            float trend = utility_hum_history[9] - utility_hum_history[0];
+            float rate = (utility_hum_history[9] - utility_hum_history[8]) / 1.0; // %/min
+            float prev_rate = (utility_hum_history[8] - utility_hum_history[7]) / 1.0;
+            bool stabilizing = (abs(rate) < 0.1 && abs(prev_rate) < 0.1);
+            if (trend > 10.0 && utility_hum_history[9] > utility_baseline_hum + 10.0 && stabilizing) {
+                trigger_fired = true;
+                auto_trend = trend;
+            }
         }
 
-        // Original automatic trigger
-        float trend = utility_hum_history[9] - utility_hum_history[0];
-        float rate = (utility_hum_history[9] - utility_hum_history[8]) / 1.0; // %/min
-        float prev_rate = (utility_hum_history[8] - utility_hum_history[7]) / 1.0;
-        bool stabilizing = (abs(rate) < 0.1 && abs(prev_rate) < 0.1);
-        if (trend > 10.0 && utility_hum_history[9] > utility_baseline_hum + 10.0 && stabilizing) {
+        if (trigger_fired) {
             int mode = determineCycleMode(currentData.utilityTemp, currentData.utilityHumidity, ERR_SHT41);
             if (mode > 0) {
                 utility_drying_mode = true;
@@ -231,22 +242,27 @@ void controlUtility() {
                 utility_burst_count = 0;
                 float off_factor_temp = (mode == 1) ? 1.0 : (mode == 2) ? 1.5 : 2.0;
                 off_start = millis() - (settings.fanOffDuration * off_factor_temp * 1000);
-                // Calculate expected end time once at trigger
                 time_t now = myTZ.now();
-                unsigned long total_seconds = (3 * (base_fan_duration_UT * (mode == 1 ? 1.0 : mode == 2 ? 0.6 : 0.3) / 1000)) + (2 * (settings.fanOffDuration * (mode == 1 ? 1.0 : mode == 2 ? 1.5 : 2.0) * 1000 / 1000));
+                unsigned long total_seconds = (3 * (base_fan_duration_UT * (mode == 1 ? 1.0 : mode == 2 ? 0.6 : 0.3) / 1000)) + (2 * (settings.fanOffDuration * off_factor_temp * 1000 / 1000));
                 expected_end_timeUT = now + total_seconds;
                 char expectedTimeStr[20];
                 strftime(expectedTimeStr, sizeof(expectedTimeStr), "%H:%M:%S", localtime(&expected_end_timeUT));
                 char logMessage[256];
-                snprintf(logMessage, sizeof(logMessage), "[UT Vent] Trigger: Trend=%.1f%%, Mode=%d, End: %s", trend, mode, expectedTimeStr);
+                if (is_manual_drying) {
+                    snprintf(logMessage, sizeof(logMessage), "[UT Vent] Manual drying trigger: Mode=%d End: %s", mode, expectedTimeStr);
+                } else {
+                    snprintf(logMessage, sizeof(logMessage), "[UT Vent] Auto trigger: Trend=%.1f%%, Mode=%d End: %s", auto_trend, mode, expectedTimeStr);
+                }
                 logEvent(logMessage);
             } else {
                 char logMessage[256];
-                snprintf(logMessage, sizeof(logMessage), "[UT Vent] Trigger blocked: Mode=%d", mode);
+                snprintf(logMessage, sizeof(logMessage), "[UT Vent] Trigger blocked (%s): Mode=%d",
+                    is_manual_drying ? "manual" : "auto", mode);
                 logEvent(logMessage);
             }
+            if (is_manual_drying) return;  // manual drying vrne, auto nadaljuje
         }
-        return;
+        // Ne vrni return - manual trigger se mora preveriti spodaj
     }
 
     // Določitev duration in off
@@ -256,9 +272,6 @@ void controlUtility() {
     unsigned long fan_off_duration = settings.fanOffDuration * off_factor * 1000; // iz settings
 
     // Expected end time is calculated once at trigger, just copy to currentData
-
-    static unsigned long burst_start = 0;
-    static bool in_burst = false;
 
     if (utility_drying_mode) {
         if (isDNDTime() && !settings.dndAllowableAutomatic) {
@@ -294,6 +307,9 @@ void controlUtility() {
                         utility_burst_count = 0;
                         expected_end_timeUT = 0;
                         currentData.utilityExpectedEndTime = 0;
+                        // Takoj posodobi globalní status - potrebno za change detection v STATUS_UPDATE
+                        currentData.utilityDryingMode = false;
+                        currentData.utilityCycleMode = 0;
                         return;  // izhod
                     } else {
                         // Prilagodi
@@ -329,16 +345,50 @@ void controlUtility() {
         }
     }
 
-    // Handle semi-automatic (blokiraj v drying_mode)
-    bool lastLightState = false; // ohrani obstoječo logiko
-    bool currentLightState = currentData.utilityLight;
-    bool semiAutomaticTrigger = lastLightState && !currentLightState && (!isDNDTime() || settings.dndAllowableSemiautomatic);
-    if (utility_drying_mode && semiAutomaticTrigger) {
+    // Handle semi-automatic (Luč OFF → zaženi ventilator)
+    static bool lastLightStateUT = false;  // static! za edge detection
+    bool currentLightStateUT = currentData.utilityLight;
+    bool lightOffUT = lastLightStateUT && !currentLightStateUT;
+    bool isDNDUT = isDNDTime();
+    bool semiAutomaticTrigger = lightOffUT && (!isDNDUT || settings.dndAllowableSemiautomatic);
+
+    if (semiAutomaticTrigger) {
+        if (utility_drying_mode) {
+            char logMessage[256];
+            snprintf(logMessage, sizeof(logMessage), "[UT Vent] Semi-auto ignored: Drying mode active");
+            logEvent(logMessage);
+        } else if (!in_burst) {
+            // Zaženi ventilator za fanDuration sekund
+            digitalWrite(PIN_UTILITY_ODVOD, HIGH);
+            currentData.utilityFan = true;
+            burst_start = millis();
+            in_burst = true;
+            currentData.offTimes[1] = myTZ.now() + settings.fanDuration;
+            char logMessage[256];
+            snprintf(logMessage, sizeof(logMessage), "[UT Vent] ON: SemiAuto Trigg (Luc OFF), Trajanje: %u s", settings.fanDuration);
+            logEvent(logMessage);
+        }
+    }
+    // Log DND blocked semi-auto
+    if (lightOffUT && isDNDUT && !settings.dndAllowableSemiautomatic) {
         char logMessage[256];
-        snprintf(logMessage, sizeof(logMessage), "[UT Vent] Semi-auto ignored: Drying mode active");
+        snprintf(logMessage, sizeof(logMessage), "[UT Vent] SemiAuto Trigg zavrnjen (DND)");
         logEvent(logMessage);
     }
-    lastLightState = currentLightState;
+    lastLightStateUT = currentLightStateUT;
+
+    // Handle manual timeout - ko ni drying cikla, timeout za ročni vklop
+    if (!utility_drying_mode && in_burst) {
+        if (millis() - burst_start >= settings.fanDuration * 1000UL) {
+            digitalWrite(PIN_UTILITY_ODVOD, LOW);
+            currentData.utilityFan = false;
+            in_burst = false;
+            currentData.offTimes[1] = 0;
+            char logMessage[256];
+            snprintf(logMessage, sizeof(logMessage), "[UT Vent] OFF: Manual cikel konec (%u s)", settings.fanDuration);
+            logEvent(logMessage);
+        }
+    }
 
     // Handle manual (dovoli, podaljša burst če active)
     bool manualTrigger = currentData.manualTriggerUtility && (!isDNDTime() || settings.dndAllowableManual);
@@ -348,17 +398,16 @@ void controlUtility() {
             char logMessage[256];
             snprintf(logMessage, sizeof(logMessage), "[UT Vent] Manual extend burst");
             logEvent(logMessage);
-        } else {
-            // Normal manual - če ni v drying_mode, zaženi normalno
-            if (!utility_drying_mode) {
-                digitalWrite(PIN_UTILITY_ODVOD, HIGH);
-                currentData.utilityFan = true;
-                burst_start = millis();
-                in_burst = true;
-                char logMessage[256];
-                snprintf(logMessage, sizeof(logMessage), "[UT Vent] Manual start: Duration=%lu s", fan_duration/1000);
-                logEvent(logMessage);
-            }
+        } else if (!utility_drying_mode && !in_burst) {
+            // Normal manual - zaženi ventilator za fanDuration sekund
+            digitalWrite(PIN_UTILITY_ODVOD, HIGH);
+            currentData.utilityFan = true;
+            burst_start = millis();
+            in_burst = true;
+            currentData.offTimes[1] = myTZ.now() + settings.fanDuration;
+            char logMessage[256];
+            snprintf(logMessage, sizeof(logMessage), "[UT Vent] ON: Manual trigger via REW, Trajanje: %u s", settings.fanDuration);
+            logEvent(logMessage);
         }
         currentData.manualTriggerUtility = false;
     }
@@ -412,6 +461,8 @@ void controlBathroom() {
     static bool lastLightState2 = false;
     static bool isLongPress = false;
     static unsigned long lastSensorCheck = 0;
+    static unsigned long burst_start = 0;  // premaknjena sem za dostop v disable bloku
+    static bool in_burst = false;          // premaknjena sem za dostop v disable bloku
 
     static unsigned long off_start = 0;
 
@@ -438,6 +489,9 @@ void controlBathroom() {
         drying_mode = false;
         cycle_mode = 0;
         burst_count = 0;
+        fanActive = false;              // reset fanActive pri disable
+        in_burst = false;              // reset burst stanja pri disable
+        currentData.offTimes[0] = 0;   // počisti off time
         lastButtonState = currentButtonState;
         lastLightState1 = currentLightState1;
         lastLightState2 = currentLightState2;
@@ -507,45 +561,45 @@ void controlBathroom() {
         currentData.manualTriggerBathroom = false;
     }
 
+    // Ignoriramo dupliciran drying trigger med aktivnim ciklom
+    if (drying_mode && currentData.manualTriggerBathroomDrying) {
+        snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Drying trigger ignored - ze v drying ciklu");
+        logEvent(logMessage);
+        currentData.manualTriggerBathroomDrying = false;
+    }
+
     // Čakanje na trigger
     if (!drying_mode && cycle_mode == 0) {
-        // Check for manual drying trigger
+        // Določi trigger: manual ima prednost pred auto
+        bool trigger_fired = false;
+        bool is_manual_drying = false;
+        float auto_trend = 0.0f;
+
         if (currentData.manualTriggerBathroomDrying) {
-            int mode = determineCycleMode(currentData.bathroomTemp, currentData.bathroomHumidity, ERR_BME280);
-            if (mode > 0) {
-                drying_mode = true;
-                cycle_mode = mode;
-                burst_count = 0;
-                off_start = millis() - (settings.fanOffDurationKop * 1000);
-                // Calculate expected end time
-                time_t now = myTZ.now();
-                unsigned long total_seconds = (3 * (360 * (cycle_mode == 1 ? 1.0 : cycle_mode == 2 ? 0.8 : 0.5) * 1000 / 1000)) + (2 * (settings.fanOffDurationKop * 1000 / 1000));
-                time_t expected_end = now + total_seconds;
-                expected_end_timeKOP = expected_end;
-                char expectedTimeStr[20];
-                strftime(expectedTimeStr, sizeof(expectedTimeStr), "%H:%M:%S", localtime(&expected_end));
-                char logMessage[256];
-                snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Manual drying trigger: Mode=%d End: %s", mode, expectedTimeStr);
-                logEvent(logMessage);
+            if (!isDNDTime() || settings.dndAllowableManual) {
+                trigger_fired = true;
+                is_manual_drying = true;
             } else {
-                char logMessage[256];
-                snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Manual drying trigger blocked: Mode=%d", mode);
+                snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Manual drying trigger zavrnjen (DND)");
                 logEvent(logMessage);
             }
             currentData.manualTriggerBathroomDrying = false;
-            return;
+        } else {
+            // Automatic trigger check
+            float trend = hum_history[2] - hum_history[0];
+            if (trend > 10.0 && hum_history[2] > baseline_hum + 10.0) {
+                trigger_fired = true;
+                auto_trend = trend;
+            }
         }
 
-        // Original automatic trigger
-        float trend = hum_history[2] - hum_history[0];
-        if (trend > 10.0 && hum_history[2] > baseline_hum + 10.0) {
+        if (trigger_fired) {
             int mode = determineCycleMode(currentData.bathroomTemp, currentData.bathroomHumidity, ERR_BME280);
             if (mode > 0) {
                 drying_mode = true;
                 cycle_mode = mode;
                 burst_count = 0;
                 off_start = millis() - (settings.fanOffDurationKop * 1000);
-                // Calculate expected end time once at trigger
                 time_t now = myTZ.now();
                 unsigned long total_seconds = (3 * (360 * (mode == 1 ? 1.0 : mode == 2 ? 0.8 : 0.5) * 1000 / 1000)) + (2 * (settings.fanOffDurationKop * 1000 / 1000));
                 time_t expected_end = now + total_seconds;
@@ -553,13 +607,19 @@ void controlBathroom() {
                 char expectedTimeStr[20];
                 strftime(expectedTimeStr, sizeof(expectedTimeStr), "%H:%M:%S", localtime(&expected_end));
                 char logMessage[256];
-                snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Trigger: Trend=%.1f%%, Mode=%d, End: %s", trend, mode, expectedTimeStr);
+                if (is_manual_drying) {
+                    snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Manual drying trigger: Mode=%d End: %s", mode, expectedTimeStr);
+                } else {
+                    snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Auto trigger: Trend=%.1f%%, Mode=%d End: %s", auto_trend, mode, expectedTimeStr);
+                }
                 logEvent(logMessage);
             } else {
                 char logMessage[256];
-                snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Trigger blocked: Mode=%d", mode);
+                snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Trigger blocked (%s): Mode=%d",
+                    is_manual_drying ? "manual" : "auto", mode);
                 logEvent(logMessage);
             }
+            if (is_manual_drying) return;  // manual drying vrne, auto nadaljuje
         }
     }
 
@@ -569,9 +629,6 @@ void controlBathroom() {
     unsigned long fan_off_duration = settings.fanOffDurationKop * 1000; // iz settings, brez faktorja
 
     // Expected end time is calculated once at trigger, just copy to currentData
-
-    static unsigned long burst_start = 0;
-    static bool in_burst = false;
 
     if (drying_mode) {
         if (isDNDTime() && !settings.dndAllowableAutomatic) {
@@ -605,6 +662,9 @@ void controlBathroom() {
                         burst_count = 0;
                         expected_end_timeKOP = 0;
                         currentData.bathroomExpectedEndTime = 0;
+                        // Takoj posodobi globalní status - potrebno za change detection v STATUS_UPDATE
+                        currentData.bathroomDryingMode = false;
+                        currentData.bathroomCycleMode = 0;
                         return;  // izhod
                     } else {
                         // Prilagodi
@@ -697,10 +757,28 @@ void controlBathroom() {
         currentData.manualTriggerBathroom = false;
     }
 
-    // Handle semi-automatic (blokiraj v drying_mode)
-    if (drying_mode && semiAutomaticTrigger) {
-        char logMessage[256];
-        snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Semi-auto ignored: Drying mode active");
+    // Handle semi-automatic (Luč OFF → zaženi ventilator, razen v drying mode)
+    bool lightOffKOP = (lastLightState1 || lastLightState2) && !currentLightState1 && !currentLightState2;
+    if (semiAutomaticTrigger) {
+        if (drying_mode) {
+            char logMessage[256];
+            snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Semi-auto ignored: Drying mode active");
+            logEvent(logMessage);
+        } else if (!fanActive) {
+            // Zaženi ventilator za fanDuration sekund (enako kot kratek pritisk)
+            digitalWrite(PIN_KOPALNICA_ODVOD, HIGH);
+            fanStartTime = millis();
+            fanActive = true;
+            currentData.bathroomFan = true;
+            unsigned long duration = settings.fanDuration * 1000;
+            currentData.offTimes[0] = myTZ.now() + duration / 1000;
+            snprintf(logMessage, sizeof(logMessage), "[KOP Vent] ON: SemiAuto Trigg (Luc OFF), Trajanje: %u s", duration / 1000);
+            logEvent(logMessage);
+        }
+    }
+    // Log DND blocked semi-auto
+    if (lightOffKOP && isDNDTime() && !settings.dndAllowableSemiautomatic) {
+        snprintf(logMessage, sizeof(logMessage), "[KOP Vent] SemiAuto Trigg zavrnjen (DND)");
         logEvent(logMessage);
     }
 
@@ -711,9 +789,19 @@ void controlBathroom() {
             char logMessage[256];
             snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Manual extend burst");
             logEvent(logMessage);
-        } else {
-            // Normal manual
+        } else if (!drying_mode) {
+            // Normal manual - zaženi ventilator za fanDuration sekund
+            digitalWrite(PIN_KOPALNICA_ODVOD, HIGH);
+            fanStartTime = millis();
+            fanActive = true;
+            currentData.bathroomFan = true;
+            unsigned long duration = settings.fanDuration * 1000;
+            currentData.offTimes[0] = myTZ.now() + duration / 1000;
+            char logMessage[256];
+            snprintf(logMessage, sizeof(logMessage), "[KOP Vent] ON: Manual trigger via REW, Trajanje: %u s", duration / 1000);
+            logEvent(logMessage);
         }
+        // Če drying_mode && !in_burst: ne prekinjaj cikla, ignoriramo ročni ukaz
         currentData.manualTriggerBathroom = false;
     }
 
@@ -854,9 +942,8 @@ float calculateDutyCycle() {
         }
     }
 
-    // Temperature increment
-    bool isNND = isNNDTime();
-    if (!isNND && tempValid && externalTempValid) {
+    // Temperature increment (isNND je že izključen v checkAutomaticPreconditions() preden se ta funkcija pokliče)
+    if (tempValid && externalTempValid) {
         if ((currentData.livingTemp > settings.tempIdealDS && currentData.externalTemp < currentData.livingTemp) ||
             (currentData.livingTemp < settings.tempIdealDS && currentData.externalTemp > currentData.livingTemp)) {
             cyclePercent += settings.incrementPercentTempDS;
@@ -889,7 +976,7 @@ float calculateDutyCycle() {
                  co2Valid ? currentData.livingCO2 : NAN,
                  (co2Valid && (currentData.livingCO2 >= settings.co2ThresholdLowDS || currentData.livingCO2 >= settings.co2ThresholdHighDS)) ? "active" : "inactive",
                  tempValid ? currentData.livingTemp : NAN,
-                 (!isNND && tempValid && externalTempValid && ((currentData.livingTemp > settings.tempIdealDS && currentData.externalTemp < currentData.livingTemp) ||
+                 (tempValid && externalTempValid && ((currentData.livingTemp > settings.tempIdealDS && currentData.externalTemp < currentData.livingTemp) ||
                  (currentData.livingTemp < settings.tempIdealDS && currentData.externalTemp > currentData.livingTemp))) ? "active" : "inactive",
                  adverseConditions ? "YES (-50%)" : "NO",
                  cyclePercent);
@@ -909,6 +996,15 @@ void handleCycleTiming(float cyclePercent, bool canRunAutomatic, bool& fanActive
         stopLivingRoomFan(fanActive, manualMode, currentLevel);
         lastOffTime = millis();
         LOG_INFO("DS Vent", "OFF: Manual cycle end");
+        return;
+    }
+
+    // Manual mode: ustavi pri disable ali odprtih oknih (konsistentno z brez-NTP potjo)
+    if (manualMode && (currentData.windowSensor1 || currentData.windowSensor2 || currentData.disableLivingRoom)) {
+        stopLivingRoomFan(fanActive, manualMode, currentLevel);
+        lastOffTime = millis();
+        const char* reason = currentData.disableLivingRoom ? "Disable" : "Okno odprto";
+        LOG_INFO("DS Vent", "OFF: Manual ustavljen (%s)", reason);
         return;
     }
 
@@ -1004,10 +1100,13 @@ void startLivingRoomFan(float cyclePercent, bool& fanActive, uint8_t& currentLev
     bool highIncrement = (humidityValid && currentData.livingHumidity >= settings.humThresholdHighDS) ||
                          (co2Valid && currentData.livingCO2 >= settings.co2ThresholdHighDS);
     bool isDND = isDNDTime();
-    uint8_t newLevel = isDND ? 1 : (highIncrement ? 3 : 1);
+    // Level 1: normalni pogoji ali DND (tiho)
+    // Level 2: neugodni pogoji — visok CO2 ali visoka vlaga (highIncrement)
+    // Level 3: rezerviran za ročni trigger
+    uint8_t newLevel = (isDND || !highIncrement) ? 1 : 2;
 
     if (newLevel == 1) digitalWrite(PIN_DNEVNI_ODVOD_1, HIGH);
-    else if (newLevel == 3) digitalWrite(PIN_DNEVNI_ODVOD_3, HIGH);
+    else if (newLevel == 2) digitalWrite(PIN_DNEVNI_ODVOD_2, HIGH);
 
     fanActive = true;
     currentLevel = newLevel;
@@ -1021,7 +1120,7 @@ void startLivingRoomFan(float cyclePercent, bool& fanActive, uint8_t& currentLev
     currentData.offTimes[5] = currentData.offTimes[4];
 
     // Determine level reason
-    const char* levelReason = isDND ? "DND" : (highIncrement ? "High increment" : "Normal");
+    const char* levelReason = isDND ? "DND (L1)" : (highIncrement ? "High conditions (L2)" : "Normal (L1)");
 
     // Determine trigger reason
     char triggerReason[128];
@@ -1043,13 +1142,13 @@ void startLivingRoomFan(float cyclePercent, bool& fanActive, uint8_t& currentLev
 // Helper function: Start manual living room fan
 void startManualLivingRoomFan(bool& fanActive, bool& manualMode, uint8_t& currentLevel, unsigned long& fanStartTime) {
     digitalWrite(PIN_DNEVNI_VPIH, HIGH);
-    digitalWrite(PIN_DNEVNI_ODVOD_2, HIGH);
+    digitalWrite(PIN_DNEVNI_ODVOD_3, HIGH);
     fanActive = true;
     manualMode = true;
-    currentLevel = 2;
+    currentLevel = 3;
     fanStartTime = millis();
     currentData.livingIntake = true;
-    currentData.livingExhaustLevel = 2;
+    currentData.livingExhaustLevel = 3;
 
     unsigned long duration = settings.fanDuration * 2 * 1000;
     if (timeSynced) {

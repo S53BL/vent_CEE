@@ -118,7 +118,7 @@ bool sendStatusUpdate() {
     return success;
 }
 
-// Send DEW_UPDATE to specified room
+// Send DEW_UPDATE to specified DEW unit - unified payload for both UT and KOP
 bool sendDewUpdate(const char* room) {
     String url;
     if (strcmp(room, "UT") == 0) {
@@ -130,65 +130,89 @@ bool sendDewUpdate(const char* room) {
         return false;
     }
 
-    // Create JSON payload with short unique names
-    DynamicJsonDocument doc(256);
+    // Create unified JSON payload - same structure sent to both UT and KOP
+    // Each DEW unit reads the fields relevant to its role
+    DynamicJsonDocument doc(384);
 
-    // Get fan state and time for the room
-    if (strcmp(room, "UT") == 0) {
-        // Fan state: 6=mode1, 7=mode2, 8=mode3 if in drying mode, else 9=disabled, 1=on, 0=off
-        if (currentData.disableUtility) {
-            doc["fut"] = 9;
-        } else if (currentData.utilityDryingMode && currentData.utilityCycleMode >= 1 && currentData.utilityCycleMode <= 3) {
-            doc["fut"] = 5 + currentData.utilityCycleMode;  // 6, 7, or 8
-        } else {
-            doc["fut"] = currentData.utilityFan ? 1 : 0;
-        }
-        // Time: expectedEndTime if in drying mode (status 6-8), else offTimes[1]
-        if (currentData.utilityDryingMode && currentData.utilityCycleMode >= 1 && currentData.utilityCycleMode <= 3) {
-            doc["tut"] = currentData.utilityExpectedEndTime;
-        } else {
-            doc["tut"] = currentData.offTimes[1];
-        }
-        doc["dt"] = currentData.utilityTemp;               // dew temp
-        doc["dh"] = currentData.utilityHumidity;           // dew hum
-        doc["de"] = currentData.errorFlags & ERR_SHT41 ? 1 : 0;  // dew err
-        doc["wi"] = currentWeatherIcon;                    // weather icon
-        doc["ss"] = currentSeasonCode;                     // season code
-    } else if (strcmp(room, "KOP") == 0) {
-        // Fan state: 6=mode1, 7=mode2, 8=mode3 if in drying mode, else 9=disabled, 1=on, 0=off
-        if (currentData.disableBathroom) {
-            doc["fkop"] = 9;
-        } else if (currentData.bathroomDryingMode && currentData.bathroomCycleMode >= 1 && currentData.bathroomCycleMode <= 3) {
-            doc["fkop"] = 5 + currentData.bathroomCycleMode;  // 6, 7, or 8
-        } else {
-            doc["fkop"] = currentData.bathroomFan ? 1 : 0;
-        }
-        // Time: expectedEndTime if in drying mode (status 6-8), else offTimes[0]
-        if (currentData.bathroomDryingMode && currentData.bathroomCycleMode >= 1 && currentData.bathroomCycleMode <= 3) {
-            doc["tkop"] = currentData.bathroomExpectedEndTime;
-        } else {
-            doc["tkop"] = currentData.offTimes[0];
-        }
-        doc["dt"] = currentData.bathroomTemp;              // dew temp
-        doc["dh"] = currentData.bathroomHumidity;          // dew hum
-        doc["de"] = currentData.errorFlags & ERR_BME280 ? 1 : 0; // dew err
-        doc["wi"] = currentWeatherIcon;                    // weather icon
-        doc["ss"] = currentSeasonCode;                     // season code
+    // Utility fan state (0=off, 1=on, 6-8=drying mode, 9=disabled)
+    if (currentData.disableUtility) {
+        doc[FIELD_FAN_UTILITY] = 9;
+    } else if (currentData.utilityDryingMode && currentData.utilityCycleMode >= 1 && currentData.utilityCycleMode <= 3) {
+        doc[FIELD_FAN_UTILITY] = 5 + currentData.utilityCycleMode;  // 6, 7, or 8
+    } else {
+        doc[FIELD_FAN_UTILITY] = currentData.utilityFan ? 1 : 0;
     }
+
+    // Bathroom fan state (0=off, 1=on, 6-8=drying mode, 9=disabled)
+    if (currentData.disableBathroom) {
+        doc[FIELD_FAN_BATHROOM] = 9;
+    } else if (currentData.bathroomDryingMode && currentData.bathroomCycleMode >= 1 && currentData.bathroomCycleMode <= 3) {
+        doc[FIELD_FAN_BATHROOM] = 5 + currentData.bathroomCycleMode;  // 6, 7, or 8
+    } else {
+        doc[FIELD_FAN_BATHROOM] = currentData.bathroomFan ? 1 : 0;
+    }
+
+    // Utility time: expectedEndTime if drying (6-8), else offTimes[1]
+    if (currentData.utilityDryingMode && currentData.utilityCycleMode >= 1 && currentData.utilityCycleMode <= 3) {
+        doc[FIELD_TIME_UTILITY] = currentData.utilityExpectedEndTime;
+    } else {
+        doc[FIELD_TIME_UTILITY] = currentData.offTimes[1];
+    }
+
+    // Bathroom time: expectedEndTime if drying (6-8), else offTimes[0]
+    if (currentData.bathroomDryingMode && currentData.bathroomCycleMode >= 1 && currentData.bathroomCycleMode <= 3) {
+        doc[FIELD_TIME_BATHROOM] = currentData.bathroomExpectedEndTime;
+    } else {
+        doc[FIELD_TIME_BATHROOM] = currentData.offTimes[0];
+    }
+
+    // Sensor data - both rooms (each DEW unit uses its own fields)
+    doc[FIELD_TEMP_BATHROOM] = currentData.bathroomTemp;      // tbat - KOP_DEW uses this
+    doc[FIELD_HUM_BATHROOM]  = currentData.bathroomHumidity;  // hbat - KOP_DEW uses this
+    doc[FIELD_PRESS_BATHROOM] = currentData.bathroomPressure; // pbat - KOP_DEW uses this
+    doc[FIELD_TEMP_UTILITY]  = currentData.utilityTemp;       // tutl - UT_DEW uses this
+    doc[FIELD_HUM_UTILITY]   = currentData.utilityHumidity;   // hutl - UT_DEW uses this
+
+    // Weather icon and season (both DEW units use these)
+    doc[FIELD_WEATHER_ICON] = currentWeatherIcon;             // wi (string)
+    doc[FIELD_SEASON_CODE]  = currentSeasonCode;              // ss
+
+    // Error flags (both DEW units may use these)
+    doc[FIELD_ERROR_BME280] = currentData.errorFlags & ERR_BME280 ? 1 : 0;  // ebm
+    doc[FIELD_ERROR_SHT41]  = currentData.errorFlags & ERR_SHT41 ? 1 : 0;   // esht
 
     String jsonString;
     serializeJson(doc, jsonString);
 
-    LOG_DEBUG("HTTP", "Sending JSON: %s", jsonString.c_str());
+    LOG_DEBUG("HTTP", "DEW_UPDATE to %s: %s", room, jsonString.c_str());
     return sendHttpPostWithRetry(room, url.c_str(), jsonString);
 }
 
 // Check and send STATUS_UPDATE to REW when states change or periodically
 void checkAndSendStatusUpdate() {
-    // Calculate current states for comparison
+    // Calculate current states for comparison (vključuje drying mode 6-8 za UT in KOP)
     uint8_t currentFanWc = currentData.disableWc ? 9 : (currentData.wcFan ? 1 : 0);
-    uint8_t currentFanUt = currentData.disableUtility ? 9 : (currentData.utilityFan ? 1 : 0);
-    uint8_t currentFanKop = currentData.disableBathroom ? 9 : (currentData.bathroomFan ? 1 : 0);
+
+    // Utility: 6=mode1, 7=mode2, 8=mode3 v drying ciklu, 9=disabled, 1=on, 0=off
+    uint8_t currentFanUt;
+    if (currentData.disableUtility) {
+        currentFanUt = 9;
+    } else if (currentData.utilityDryingMode && currentData.utilityCycleMode >= 1 && currentData.utilityCycleMode <= 3) {
+        currentFanUt = 5 + currentData.utilityCycleMode;  // 6, 7, or 8
+    } else {
+        currentFanUt = currentData.utilityFan ? 1 : 0;
+    }
+
+    // Bathroom: 6=mode1, 7=mode2, 8=mode3 v drying ciklu, 9=disabled, 1=on, 0=off
+    uint8_t currentFanKop;
+    if (currentData.disableBathroom) {
+        currentFanKop = 9;
+    } else if (currentData.bathroomDryingMode && currentData.bathroomCycleMode >= 1 && currentData.bathroomCycleMode <= 3) {
+        currentFanKop = 5 + currentData.bathroomCycleMode;  // 6, 7, or 8
+    } else {
+        currentFanKop = currentData.bathroomFan ? 1 : 0;
+    }
+
     uint8_t currentFanDse = currentData.disableLivingRoom ? 9 : currentData.livingExhaustLevel;
 
     uint8_t currentInputL1 = currentData.bathroomLight1 ? 1 : 0;

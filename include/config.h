@@ -148,7 +148,7 @@ struct ExternalData {
     float livingTempDS;
     float livingHumidityDS;
     uint16_t livingCO2;
-    int weatherIcon;
+    String weatherIcon;
     int seasonCode;
     uint32_t timestamp;
 };

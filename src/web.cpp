@@ -250,7 +250,7 @@ void handleSensorData(AsyncWebServerRequest *request, uint8_t *data, size_t len,
         } else {
             externalData.livingCO2 = 0;
         }
-        externalData.weatherIcon = doc[FIELD_WEATHER_ICON] | 0;          // weather icon
+        externalData.weatherIcon = doc[FIELD_WEATHER_ICON] | "";         // weather icon (string)
         externalData.seasonCode = doc[FIELD_SEASON_CODE] | 0;            // season code
         externalData.timestamp = doc[FIELD_TIMESTAMP] | 0;                 // timestamp
 
@@ -272,10 +272,10 @@ void handleSensorData(AsyncWebServerRequest *request, uint8_t *data, size_t len,
             externalDataValid = true;
         }
 
-        LOG_INFO("HTTP", "SENSOR_DATA: Received - Ext: %.1f°C/%.1f%%/%.1fhPa, DS: %.1f°C/%.1f%%/%dppm, Icon: %d, Season: %d, TS: %u",
+        LOG_INFO("HTTP", "SENSOR_DATA: Received - Ext: %.1f°C/%.1f%%/%.1fhPa, DS: %.1f°C/%.1f%%/%dppm, Icon: %s, Season: %d, TS: %u",
                  externalData.externalTemperature, externalData.externalHumidity, externalData.externalPressure,
                  externalData.livingTempDS, externalData.livingHumidityDS, externalData.livingCO2,
-                 externalData.weatherIcon, externalData.seasonCode, externalData.timestamp);
+                 externalData.weatherIcon.c_str(), externalData.seasonCode, externalData.timestamp);
 
         // Reactivate REW if it was offline
         String clientIP = request->client()->remoteIP().toString();

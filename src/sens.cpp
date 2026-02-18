@@ -505,12 +505,18 @@ int determineCycleMode(float int_temp, float int_hum, uint8_t sensor_err_flag) {
     float dew_internal = int_temp - ((100 - int_hum) / 5.0);
     float dew_external = currentData.externalTemp - ((100 - currentData.externalHumidity) / 5.0);
     float dew_diff = dew_internal - dew_external;
+    // Mode 3 (zelo zmanjšano) - preveri PRVO ker so pogoji strožji od mode 2
+    // Npr: externalTemp < tempMinThreshold izpolni pogoj za mode 2 (< tempLowThreshold) in mode 3 - mode 3 mora imeti prednost
+    if (currentData.externalTemp < settings.tempMinThreshold || dew_diff < 0.0 || currentData.externalHumidity > settings.humExtremeHighDS) {
+        return 3; // zelo zmanjšano
+    }
+    // Mode 2 (malo zmanjšano)
+    if (currentData.externalTemp < settings.tempLowThreshold || (dew_diff >= 0.0 && dew_diff <= 2.0) || currentData.externalHumidity > 70.0) {
+        return 2; // malo zmanjšano
+    }
+    // Mode 1 (normalno)
     if (currentData.externalTemp >= settings.tempLowThreshold && dew_diff > 2.0) {
         return 1; // normalno
-    } else if (currentData.externalTemp < settings.tempLowThreshold || (dew_diff >= 0.0 && dew_diff <= 2.0) || currentData.externalHumidity > 70.0) {
-        return 2; // malo zmanjšano
-    } else if (currentData.externalTemp < settings.tempMinThreshold || dew_diff < 0.0 || currentData.externalHumidity > settings.humExtremeHighDS) {
-        return 3; // zelo zmanjšano
     }
     return -1; // blok ko ni parametrov za izračun
 }

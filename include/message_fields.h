@@ -42,15 +42,15 @@
 #define FIELD_ENERGY_CONSUMPTION  "eng"   // energy_consumption
 #define FIELD_DUTY_CYCLE_LIVING   "dlds"  // duty_cycle_living_room
 
-// DEW_UPDATE field names (CEE → DEW)
-#define FIELD_DEW_FAN_UTILITY     "fut"   // fan_utility
-#define FIELD_DEW_FAN_BATHROOM    "fkop"  // fan_bathroom
-#define FIELD_DEW_TIME_UTILITY    "tut"   // time_utility
-#define FIELD_DEW_TIME_BATHROOM   "tkop"  // time_bathroom
-#define FIELD_DEW_TEMP            "dt"    // dew_temperature
-#define FIELD_DEW_HUM             "dh"    // dew_humidity
-#define FIELD_DEW_ERROR           "de"    // dew_error
-#define FIELD_WEATHER_ICON        "wi"    // weather_icon
+// DEW_UPDATE field names (CEE → DEW) - skupno sporočilo za obe enoti (UT in KOP)
+// Polja za ventilatorje in čase so ista kot v STATUS_UPDATE:
+//   FIELD_FAN_UTILITY, FIELD_FAN_BATHROOM, FIELD_TIME_UTILITY, FIELD_TIME_BATHROOM
+// Polja za senzorje so ista kot v STATUS_UPDATE:
+//   FIELD_TEMP_BATHROOM, FIELD_HUM_BATHROOM, FIELD_PRESS_BATHROOM,
+//   FIELD_TEMP_UTILITY, FIELD_HUM_UTILITY,
+//   FIELD_ERROR_BME280, FIELD_ERROR_SHT41
+// Skupna polja za DEW_UPDATE in SENSOR_DATA:
+#define FIELD_WEATHER_ICON        "wi"    // weather_icon (string)
 #define FIELD_SEASON_CODE         "ss"    // season_code
 
 // SENSOR_DATA field names (REW → CEE)
@@ -60,8 +60,7 @@
 #define FIELD_DS_TEMP             "dt"    // ds_temperature
 #define FIELD_DS_HUM              "dh"    // ds_humidity
 #define FIELD_DS_CO2              "dc"    // ds_co2
-#define FIELD_WEATHER_ICON        "wi"    // weather_icon
-#define FIELD_SEASON_CODE         "ss"    // season_code
+// FIELD_WEATHER_ICON and FIELD_SEASON_CODE defined above (shared)
 #define FIELD_TIMESTAMP           "ts"    // timestamp
 
 // MANUAL_CONTROL field names (REW → CEE)

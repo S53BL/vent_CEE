@@ -12,7 +12,7 @@
 extern ExternalData externalData;
 extern Settings settings;
 extern CurrentData currentData;
-extern int currentWeatherIcon;
+extern String currentWeatherIcon;
 extern int currentSeasonCode;
 
 void loadSettings();

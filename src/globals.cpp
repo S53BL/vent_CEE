@@ -25,7 +25,7 @@ DeviceStatus kopDewStatus = {false};
 ExternalData externalData;
 Settings settings;
 CurrentData currentData;
-int currentWeatherIcon = 0;
+String currentWeatherIcon = "";
 int currentSeasonCode = 0;
 
 Adafruit_BME280 *bme280 = nullptr;
