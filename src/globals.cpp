@@ -39,6 +39,9 @@ String logBuffer = "";
 bool loggingInitialized = false;
 unsigned long lastLogFlush = 0;
 
+// I2C mutex for thread-safe operations
+SemaphoreHandle_t i2cMutex = NULL;
+
 uint16_t calculateCRC(const uint8_t* data, size_t len) {
   uint16_t crc = 0xFFFF;
   for (size_t i = 0; i < len; i++) {

@@ -268,7 +268,7 @@ void loop() {
     if (now - lastSensorRead >= SENSOR_READ_INTERVAL * 1000) {
         readSensors();
         performPeriodicSensorCheck();
-        performPeriodicI2CReset();
+        performSmartI2CMaintenance();
         lastSensorRead = now;
     }
 

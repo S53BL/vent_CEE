@@ -3,15 +3,38 @@
 #include "sens.h"
 #include <functional>
 
-void initI2CBus() {
-    // Initialize I2C bus only once
+void initI2CBus(bool force) {
+    // Initialize I2C bus only once, unless force is true
     static bool i2cInitialized = false;
-    if (!i2cInitialized) {
-        Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
-        Wire.setClock(100000);
-        Wire.setTimeout(100);
+    
+    if (force || !i2cInitialized) {
+        // Reset pins to GPIO mode before reinitialization
+        if (i2cInitialized || force) {
+            pinMode(PIN_I2C_SDA, INPUT);
+            pinMode(PIN_I2C_SCL, INPUT);
+            delay(10);
+            Wire.end(); // Cleanup if already initialized
+        }
+        
+        if (!Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL)) {
+            LOG_ERROR("I2C", "Wire.begin() failed!");
+            return;
+        }
+        
+        Wire.setClock(I2C_CLOCK_SPEED); // 10 kHz for robust communication
+        Wire.setTimeout(I2C_TIMEOUT_MS);
         i2cInitialized = true;
-        LOG_INFO("I2C", "Bus initialized");
+        LOG_INFO("I2C", "Bus initialized at %d Hz, timeout %d ms", I2C_CLOCK_SPEED, I2C_TIMEOUT_MS);
+        
+        // Create mutex if not already created
+        if (i2cMutex == NULL) {
+            i2cMutex = xSemaphoreCreateMutex();
+            if (i2cMutex != NULL) {
+                LOG_INFO("I2C", "Mutex created successfully");
+            } else {
+                LOG_ERROR("I2C", "Failed to create mutex!");
+            }
+        }
     }
 }
 
@@ -299,28 +322,61 @@ bool checkI2CDevice(uint8_t address) {
     return (Wire.endTransmission() == 0);
 }
 
-void resetI2CBus() {
-    char logMessage[256];
-    // Toggle SCL 9x for bus clear
+bool resetI2CBus() {
+    LOG_INFO("I2C", "Starting bus recovery...");
+    
+    // Step 1: Bus clear protocol (9 clock pulses)
     pinMode(PIN_I2C_SCL, OUTPUT);
-    pinMode(PIN_I2C_SDA, INPUT); // SDA input for checking
+    pinMode(PIN_I2C_SDA, INPUT_PULLUP);
+    
     for (int i = 0; i < 9; i++) {
         digitalWrite(PIN_I2C_SCL, LOW);
-        delayMicroseconds(10);
+        delayMicroseconds(5);
         digitalWrite(PIN_I2C_SCL, HIGH);
-        delayMicroseconds(10);
+        delayMicroseconds(5);
+        
+        // Check if SDA released
+        if (digitalRead(PIN_I2C_SDA) == HIGH) {
+            LOG_INFO("I2C", "SDA released after %d clocks", i + 1);
+            break;
+        }
     }
-    // Check SDA
+    
+    // Step 2: Check final SDA state
     if (digitalRead(PIN_I2C_SDA) == LOW) {
-        LOG_ERROR("I2C", "Error: SDA stuck low after bus recovery");
-    } else {
-        LOG_INFO("I2C", "Bus recovery successful");
+        LOG_ERROR("I2C", "SDA stuck LOW - hardware issue!");
+        return false;
     }
-    // Reinitialize I2C with slower speed for recovery
-    Wire.setClock(10000); // 10 kHz
-    Wire.setTimeout(I2C_TIMEOUT_MS); // 50 ms
-    // Use centralized init to avoid multiple Wire.begin calls
-    initI2CBus();
+    
+    // Step 3: Generate STOP condition
+    pinMode(PIN_I2C_SDA, OUTPUT);
+    digitalWrite(PIN_I2C_SDA, LOW);
+    delayMicroseconds(5);
+    pinMode(PIN_I2C_SCL, INPUT_PULLUP);
+    delayMicroseconds(5);
+    pinMode(PIN_I2C_SDA, INPUT_PULLUP);
+    delayMicroseconds(5);
+    
+    // Step 4: Reinitialize I2C bus
+    initI2CBus(true); // Force reinit
+    
+    // Step 5: Verify bus - scan for devices
+    int devicesFound = 0;
+    for (uint8_t addr = 1; addr < 127; addr++) {
+        Wire.beginTransmission(addr);
+        if (Wire.endTransmission() == 0) {
+            devicesFound++;
+        }
+    }
+    
+    bool success = (devicesFound > 0);
+    if (success) {
+        LOG_INFO("I2C", "Bus recovery successful - %d devices found", devicesFound);
+    } else {
+        LOG_ERROR("I2C", "Bus recovery failed - no devices found");
+    }
+    
+    return success;
 }
 
 void performPeriodicSensorCheck() {
@@ -434,12 +490,56 @@ void performPeriodicSensorCheck() {
     }
 }
 
-void performPeriodicI2CReset() {
-    static unsigned long lastReset = 0;
-    if (millis() - lastReset >= 1800000) { // 30 minut
-        resetI2CBus();
-        LOG_INFO("I2C", "Periodična inicializacija");
-        lastReset = millis();
+void performSmartI2CMaintenance() {
+    static uint8_t consecutiveErrors = 0;
+    static unsigned long lastErrorTime = 0;
+    static unsigned long lastPreventive = 0;
+    
+    // Count errors
+    bool hasErrors = (currentData.errorFlags & (ERR_SHT41 | ERR_BME280)) != 0;
+    
+    if (hasErrors) {
+        consecutiveErrors++;
+        lastErrorTime = millis();
+        
+        // Progressive recovery strategy - trigger bus reset after 3 consecutive errors
+        if (consecutiveErrors >= 3) {
+            LOG_WARN("I2C", "Multiple consecutive errors (%d) detected, performing bus reset", consecutiveErrors);
+            if (resetI2CBus()) {
+                LOG_INFO("I2C", "Bus reset successful, error counter cleared");
+                consecutiveErrors = 0;
+            } else {
+                LOG_ERROR("I2C", "Bus reset failed, will retry on next cycle");
+                // Keep error counter but cap it to avoid overflow
+                if (consecutiveErrors > 10) {
+                    consecutiveErrors = 10;
+                }
+            }
+        }
+    } else {
+        // No errors - reset counter
+        consecutiveErrors = 0;
+    }
+    
+    // Preventive maintenance - only if system is stable
+    // Run every 60 minutes, only if no errors for at least 10 minutes
+    if (millis() - lastPreventive > 3600000 && // 60 minutes since last preventive
+        consecutiveErrors == 0 && 
+        millis() - lastErrorTime > 600000) { // 10 minutes without errors
+        
+        LOG_INFO("I2C", "Performing preventive bus scan");
+        
+        // Light maintenance - just scan bus without full reset
+        int devicesFound = 0;
+        for (uint8_t addr = 1; addr < 127; addr++) {
+            Wire.beginTransmission(addr);
+            if (Wire.endTransmission() == 0) {
+                devicesFound++;
+            }
+        }
+        
+        LOG_INFO("I2C", "Preventive scan complete - %d devices found", devicesFound);
+        lastPreventive = millis();
     }
 }
 

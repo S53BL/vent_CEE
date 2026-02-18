@@ -7,13 +7,13 @@
 #include "globals.h"
 #include "logging.h"
 
-void initI2CBus();
+void initI2CBus(bool force = false);
 void initSensors();
 void readSensors();
 bool checkI2CDevice(uint8_t address);
-void resetI2CBus();
+bool resetI2CBus();
 void performPeriodicSensorCheck();
-void performPeriodicI2CReset();
+void performSmartI2CMaintenance();
 
 void setupInputs();
 void readInputs();

@@ -7,6 +7,8 @@
 #include <Adafruit_BME280.h>
 #include <Adafruit_SHT4x.h>
 #include <ezTime.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 #include "config.h"
 
 extern ExternalData externalData;
@@ -50,5 +52,8 @@ struct DeviceStatus {
 extern DeviceStatus rewStatus;
 extern DeviceStatus utDewStatus;
 extern DeviceStatus kopDewStatus;
+
+// I2C mutex for thread-safe operations
+extern SemaphoreHandle_t i2cMutex;
 
 #endif // GLOBALS_H

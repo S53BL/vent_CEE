@@ -412,9 +412,14 @@ void controlUtility() {
         currentData.manualTriggerUtility = false;
     }
 
-    // Handle switch
+    // Handle switch — "zadnji ima besedo": edge-detection za fizično stikalo in REW toggle
     static bool lastSwitchState = false;
+    static bool switchInitialized = false;
     bool currentSwitchState = currentData.utilitySwitch;
+    if (!switchInitialized) {
+        lastSwitchState = !currentSwitchState;  // prisili edge detection pri prvem klicu
+        switchInitialized = true;
+    }
     if (currentSwitchState != lastSwitchState) {
         if (!currentSwitchState) {
             currentData.disableUtility = true;
@@ -461,6 +466,8 @@ void controlBathroom() {
     static bool lastLightState2 = false;
     static bool isLongPress = false;
     static unsigned long lastSensorCheck = 0;
+    static unsigned long fanEndTime = 0;   // absolute millis kdaj se fan ugasne
+    static bool timeExtended = false;      // ali je bilo podaljšanje že dodeljeno
     static unsigned long burst_start = 0;  // premaknjena sem za dostop v disable bloku
     static bool in_burst = false;          // premaknjena sem za dostop v disable bloku
 
@@ -513,35 +520,39 @@ void controlBathroom() {
             logEvent(logMessage);
             buttonPressStart = 0;
             if (millis() - lastOffTime < 2000) {
-                snprintf(logMessage, sizeof(logMessage), "[KOP Vent] OFF: Zaporedni pritisk ignoriran");
+                snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Pritisk ignoriran (debounce)");
                 logEvent(logMessage);
-            } else {
-                if (fanActive) {
-                    snprintf(logMessage, sizeof(logMessage), "[KOP Vent] OFF: Prekinitev z Man Trigg");
-                    logEvent(logMessage);
-                    digitalWrite(PIN_KOPALNICA_ODVOD, LOW);
-                    fanActive = false;
-                    currentData.bathroomFan = false;
-                    currentData.offTimes[0] = 0;
-                }
+            } else if (!fanActive) {
+                unsigned long duration = isLongPress ? settings.fanDuration * 2 * 1000 : settings.fanDuration * 1000;
+                fanEndTime = millis() + duration;
+                timeExtended = false;
                 digitalWrite(PIN_KOPALNICA_ODVOD, HIGH);
                 fanStartTime = millis();
                 fanActive = true;
                 currentData.bathroomFan = true;
-                unsigned long duration = isLongPress ? settings.fanDuration * 2 * 1000 : settings.fanDuration * 1000;
                 const char* triggerType = isLongPress ? "Man Trigg (dolg)" : "Man Trigg (kratek)";
                 snprintf(logMessage, sizeof(logMessage), "[KOP Vent] ON: %s, Trajanje: %u s", triggerType, duration / 1000);
+                logEvent(logMessage);
+            } else if (!timeExtended) {
+                fanEndTime += settings.fanDuration * 1000;
+                timeExtended = true;
+                snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Podaljsan: +%u s", settings.fanDuration);
+                logEvent(logMessage);
+            } else {
+                snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Tipka zaklenjena do izklopa");
                 logEvent(logMessage);
             }
         }
 
         // Handle timeout for active fans
-        if (fanActive && (millis() - fanStartTime >= (isLongPress ? settings.fanDuration * 2 * 1000 : settings.fanDuration * 1000))) {
+        if (fanActive && millis() >= fanEndTime) {
             digitalWrite(PIN_KOPALNICA_ODVOD, LOW);
             fanActive = false;
             currentData.bathroomFan = false;
             currentData.offTimes[0] = 0;
             lastOffTime = millis();
+            isLongPress = false;
+            timeExtended = false;
             snprintf(logMessage, sizeof(logMessage), "[KOP Vent] OFF: Cikel konec");
             logEvent(logMessage);
         }
@@ -712,28 +723,33 @@ void controlBathroom() {
         logEvent(logMessage);
         buttonPressStart = 0;
         if (millis() - lastOffTime < 2000) {
-            snprintf(logMessage, sizeof(logMessage), "[KOP Vent] OFF: Zaporedni pritisk ignoriran");
+            snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Pritisk ignoriran (debounce)");
             logEvent(logMessage);
         } else if (!isDNDTime() || settings.dndAllowableManual) {
-            if (fanActive) {
-                snprintf(logMessage, sizeof(logMessage), "[KOP Vent] OFF: Prekinitev z Man Trigg");
+            if (!fanActive) {
+                unsigned long duration = isLongPress ? settings.fanDuration * 2 * 1000 : settings.fanDuration * 1000;
+                fanEndTime = millis() + duration;
+                timeExtended = false;
+                digitalWrite(PIN_KOPALNICA_ODVOD, HIGH);
+                fanStartTime = millis();
+                fanActive = true;
+                currentData.bathroomFan = true;
+                currentData.offTimes[0] = myTZ.now() + duration / 1000;
+                const char* triggerType = isLongPress ? "Man Trigg (dolg)" : "Man Trigg (kratek)";
+                snprintf(logMessage, sizeof(logMessage), "[KOP Vent] ON: %s, Trajanje: %u s", triggerType, duration / 1000);
                 logEvent(logMessage);
-                digitalWrite(PIN_KOPALNICA_ODVOD, LOW);
-                fanActive = false;
-                currentData.bathroomFan = false;
-                currentData.offTimes[0] = 0;
+            } else if (!timeExtended) {
+                fanEndTime += settings.fanDuration * 1000;
+                currentData.offTimes[0] += settings.fanDuration;
+                timeExtended = true;
+                snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Podaljsan: +%u s", settings.fanDuration);
+                logEvent(logMessage);
+            } else {
+                snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Tipka zaklenjena do izklopa");
+                logEvent(logMessage);
             }
-            digitalWrite(PIN_KOPALNICA_ODVOD, HIGH);
-            fanStartTime = millis();
-            fanActive = true;
-            currentData.bathroomFan = true;
-            unsigned long duration = isLongPress ? settings.fanDuration * 2 * 1000 : settings.fanDuration * 1000;
-            currentData.offTimes[0] = myTZ.now() + duration / 1000;
-            const char* triggerType = isLongPress ? "Man Trigg (dolg)" : "Man Trigg (kratek)";
-            snprintf(logMessage, sizeof(logMessage), "[KOP Vent] ON: %s, Trajanje: %u s", triggerType, duration / 1000);
-            logEvent(logMessage);
         } else {
-            snprintf(logMessage, sizeof(logMessage), "[KOP Vent] OFF: Man Trigg zavrnjen (DND)");
+            snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Man Trigg zavrnjen (DND)");
             logEvent(logMessage);
         }
     }
@@ -749,14 +765,6 @@ void controlBathroom() {
         currentData.manualTriggerBathroom = false;
     }
 
-    // Check for ignored manual triggers due to fan already active
-    if (manualTriggerREW && fanActive) {
-        char logMessage[256];
-        snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Manual trigger ignored - fan already active");
-        logEvent(logMessage);
-        currentData.manualTriggerBathroom = false;
-    }
-
     // Handle semi-automatic (Luč OFF → zaženi ventilator, razen v drying mode)
     bool lightOffKOP = (lastLightState1 || lastLightState2) && !currentLightState1 && !currentLightState2;
     if (semiAutomaticTrigger) {
@@ -765,12 +773,13 @@ void controlBathroom() {
             snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Semi-auto ignored: Drying mode active");
             logEvent(logMessage);
         } else if (!fanActive) {
-            // Zaženi ventilator za fanDuration sekund (enako kot kratek pritisk)
+            unsigned long duration = settings.fanDuration * 1000;
+            fanEndTime = millis() + duration;
+            timeExtended = false;
             digitalWrite(PIN_KOPALNICA_ODVOD, HIGH);
             fanStartTime = millis();
             fanActive = true;
             currentData.bathroomFan = true;
-            unsigned long duration = settings.fanDuration * 1000;
             currentData.offTimes[0] = myTZ.now() + duration / 1000;
             snprintf(logMessage, sizeof(logMessage), "[KOP Vent] ON: SemiAuto Trigg (Luc OFF), Trajanje: %u s", duration / 1000);
             logEvent(logMessage);
@@ -782,42 +791,54 @@ void controlBathroom() {
         logEvent(logMessage);
     }
 
-    // Handle manual (dovoli, podaljša burst če active)
+    // Handle manual REW trigger (start/extend-1x/lock)
     if (manualTriggerREW) {
         if (drying_mode && in_burst) {
-            burst_start -= fan_duration; // podaljšaj za + fan_duration
+            burst_start -= fan_duration;  // podaljšaj burst
             char logMessage[256];
             snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Manual extend burst");
             logEvent(logMessage);
         } else if (!drying_mode) {
-            // Normal manual - zaženi ventilator za fanDuration sekund
-            digitalWrite(PIN_KOPALNICA_ODVOD, HIGH);
-            fanStartTime = millis();
-            fanActive = true;
-            currentData.bathroomFan = true;
-            unsigned long duration = settings.fanDuration * 1000;
-            currentData.offTimes[0] = myTZ.now() + duration / 1000;
-            char logMessage[256];
-            snprintf(logMessage, sizeof(logMessage), "[KOP Vent] ON: Manual trigger via REW, Trajanje: %u s", duration / 1000);
-            logEvent(logMessage);
+            if (!fanActive) {
+                unsigned long duration = settings.fanDuration * 1000;
+                fanEndTime = millis() + duration;
+                timeExtended = false;
+                digitalWrite(PIN_KOPALNICA_ODVOD, HIGH);
+                fanStartTime = millis();
+                fanActive = true;
+                currentData.bathroomFan = true;
+                currentData.offTimes[0] = myTZ.now() + duration / 1000;
+                char logMessage[256];
+                snprintf(logMessage, sizeof(logMessage), "[KOP Vent] ON: Manual trigger via REW, Trajanje: %u s", duration / 1000);
+                logEvent(logMessage);
+            } else if (!timeExtended) {
+                fanEndTime += settings.fanDuration * 1000;
+                currentData.offTimes[0] += settings.fanDuration;
+                timeExtended = true;
+                char logMessage[256];
+                snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Podaljsan via REW: +%u s", settings.fanDuration);
+                logEvent(logMessage);
+            } else {
+                char logMessage[256];
+                snprintf(logMessage, sizeof(logMessage), "[KOP Vent] REW trigger ignoriran (ze podaljsano)");
+                logEvent(logMessage);
+            }
         }
-        // Če drying_mode && !in_burst: ne prekinjaj cikla, ignoriramo ročni ukaz
+        // Če drying_mode && !in_burst: ne prekinjaj cikla
         currentData.manualTriggerBathroom = false;
     }
 
-    if (fanActive) {
-        unsigned long duration = (isLongPress && manualTriggerREW) ?
-                                settings.fanDuration * 2 * 1000 :
-                                settings.fanDuration * 1000;
-        if (millis() - fanStartTime >= duration) {
-            digitalWrite(PIN_KOPALNICA_ODVOD, LOW);
-            fanActive = false;
-            currentData.bathroomFan = false;
-            currentData.offTimes[0] = 0;
-            lastOffTime = millis();
-            snprintf(logMessage, sizeof(logMessage), "[KOP Vent] OFF: Cikel konec (%u s)", duration / 1000);
-            logEvent(logMessage);
-        }
+    // Fan timeout — uporablja fanEndTime (absolute millis)
+    if (fanActive && millis() >= fanEndTime) {
+        digitalWrite(PIN_KOPALNICA_ODVOD, LOW);
+        fanActive = false;
+        currentData.bathroomFan = false;
+        currentData.offTimes[0] = 0;
+        lastOffTime = millis();
+        isLongPress = false;
+        timeExtended = false;
+        snprintf(logMessage, sizeof(logMessage), "[KOP Vent] OFF: Cikel konec");
+        logEvent(logMessage);
     }
 
     if (millis() - lastSensorCheck >= SENSOR_TEST_INTERVAL * 1000) {

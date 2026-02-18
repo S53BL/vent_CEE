@@ -14,102 +14,103 @@
 #define DEW_UT_URL "http://192.168.2.193"
 #define DEW_KOP_URL "http://192.168.2.194"
 
+// Helper: Compute fan states — shared between sendStatusUpdate and checkAndSendStatusUpdate
+// Eliminates code duplication and keeps both functions in sync
+struct FanStates {
+    uint8_t fwc, fut, fkop, fdse;
+};
+
+FanStates computeFanStates() {
+    FanStates s;
+    s.fwc = currentData.disableWc ? 9 : (currentData.wcFan ? 1 : 0);
+    if (currentData.disableUtility) {
+        s.fut = 9;
+    } else if (currentData.utilityDryingMode && currentData.utilityCycleMode >= 1 && currentData.utilityCycleMode <= 3) {
+        s.fut = 5 + currentData.utilityCycleMode;  // 6=mode1, 7=mode2, 8=mode3
+    } else {
+        s.fut = currentData.utilityFan ? 1 : 0;
+    }
+    if (currentData.disableBathroom) {
+        s.fkop = 9;
+    } else if (currentData.bathroomDryingMode && currentData.bathroomCycleMode >= 1 && currentData.bathroomCycleMode <= 3) {
+        s.fkop = 5 + currentData.bathroomCycleMode;  // 6=mode1, 7=mode2, 8=mode3
+    } else {
+        s.fkop = currentData.bathroomFan ? 1 : 0;
+    }
+    s.fdse = currentData.disableLivingRoom ? 9 : currentData.livingExhaustLevel;
+    return s;
+}
+
 // Send STATUS_UPDATE to REW
 bool sendStatusUpdate() {
     String url = String(REW_URL) + "/api/status-update";
 
-    // Create JSON payload with short field names
     DynamicJsonDocument doc(512);
 
-    // Fans (0=off, 1=on, 6-8=drying mode, 9=disabled)
-    doc["fwc"] = currentData.disableWc ? 9 : (currentData.wcFan ? 1 : 0);  // fan wc
-    // Utility: 6=mode1, 7=mode2, 8=mode3 if in drying mode, else 9=disabled, 1=on, 0=off
-    if (currentData.disableUtility) {
-        doc["fut"] = 9;
-    } else if (currentData.utilityDryingMode && currentData.utilityCycleMode >= 1 && currentData.utilityCycleMode <= 3) {
-        doc["fut"] = 5 + currentData.utilityCycleMode;  // 6, 7, or 8
-    } else {
-        doc["fut"] = currentData.utilityFan ? 1 : 0;
-    }
-    // Bathroom: 6=mode1, 7=mode2, 8=mode3 if in drying mode, else 9=disabled, 1=on, 0=off
-    if (currentData.disableBathroom) {
-        doc["fkop"] = 9;
-    } else if (currentData.bathroomDryingMode && currentData.bathroomCycleMode >= 1 && currentData.bathroomCycleMode <= 3) {
-        doc["fkop"] = 5 + currentData.bathroomCycleMode;  // 6, 7, or 8
-    } else {
-        doc["fkop"] = currentData.bathroomFan ? 1 : 0;
-    }
-    // fdse: 0=off, 1=level1, 2=level2, 3=level3, 9=disabled
-    if (currentData.disableLivingRoom) {
-        doc["fdse"] = 9;  // disabled
-    } else {
-        doc["fdse"] = currentData.livingExhaustLevel;  // 0, 1, 2, ali 3
-    }
+    // Fans — via shared helper (0=off, 1=on, 6-8=drying mode, 9=disabled)
+    FanStates fs = computeFanStates();
+    doc[FIELD_FAN_WC]         = fs.fwc;
+    doc[FIELD_FAN_UTILITY]    = fs.fut;
+    doc[FIELD_FAN_BATHROOM]   = fs.fkop;
+    doc[FIELD_FAN_LIVING_EXH] = fs.fdse;
 
     // Inputs (digital states)
-    doc["il1"] = currentData.bathroomLight1 ? 1 : 0;     // input bathroom light 1
-    doc["il2"] = currentData.bathroomLight2 ? 1 : 0;     // input bathroom light 2
-    doc["iul"] = currentData.utilityLight ? 1 : 0;       // input utility light
-    doc["iwc"] = currentData.wcLight ? 1 : 0;            // input wc light
-    doc["iwr"] = currentData.windowSensor1 ? 1 : 0;      // input window roof
-    doc["iwb"] = currentData.windowSensor2 ? 1 : 0;      // input window balcony
+    doc[FIELD_INPUT_BATHROOM_L1] = currentData.bathroomLight1 ? 1 : 0;
+    doc[FIELD_INPUT_BATHROOM_L2] = currentData.bathroomLight2 ? 1 : 0;
+    doc[FIELD_INPUT_UTILITY_L]   = currentData.utilityLight ? 1 : 0;
+    doc[FIELD_INPUT_WC_L]        = currentData.wcLight ? 1 : 0;
+    doc[FIELD_INPUT_WINDOW_ROOF] = currentData.windowSensor1 ? 1 : 0;
+    doc[FIELD_INPUT_WINDOW_BALC] = currentData.windowSensor2 ? 1 : 0;
 
     // Off-times (Unix timestamps)
-    doc["twc"] = currentData.offTimes[2];        // time wc
-    // Time utility: expectedEndTime if in drying mode (status 6-8), else offTimes[1]
+    doc[FIELD_TIME_WC] = currentData.offTimes[2];
     if (currentData.utilityDryingMode && currentData.utilityCycleMode >= 1 && currentData.utilityCycleMode <= 3) {
-        doc["tut"] = currentData.utilityExpectedEndTime;
+        doc[FIELD_TIME_UTILITY] = currentData.utilityExpectedEndTime;
     } else {
-        doc["tut"] = currentData.offTimes[1];
+        doc[FIELD_TIME_UTILITY] = currentData.offTimes[1];
     }
-    // Time bathroom: expectedEndTime if in drying mode (status 6-8), else offTimes[0]
     if (currentData.bathroomDryingMode && currentData.bathroomCycleMode >= 1 && currentData.bathroomCycleMode <= 3) {
-        doc["tkop"] = currentData.bathroomExpectedEndTime;
+        doc[FIELD_TIME_BATHROOM] = currentData.bathroomExpectedEndTime;
     } else {
-        doc["tkop"] = currentData.offTimes[0];
+        doc[FIELD_TIME_BATHROOM] = currentData.offTimes[0];
     }
-    doc["tdse"] = currentData.offTimes[4];       // time living exhaust
+    doc[FIELD_TIME_LIVING_EXH] = currentData.offTimes[4];
 
     // Error flags (0=ok, 1=error)
-    doc["ebm"] = currentData.errorFlags & ERR_BME280 ? 1 : 0;   // error bme280
-    doc["esht"] = currentData.errorFlags & ERR_SHT41 ? 1 : 0;   // error sht41
-    doc["epwr"] = currentData.errorFlags & ERR_POWER ? 1 : 0;   // error power
-    doc["edew"] = currentData.dewError;   // error dew
+    doc[FIELD_ERROR_BME280] = currentData.errorFlags & ERR_BME280 ? 1 : 0;
+    doc[FIELD_ERROR_SHT41]  = currentData.errorFlags & ERR_SHT41 ? 1 : 0;
+    doc[FIELD_ERROR_POWER]  = currentData.errorFlags & ERR_POWER ? 1 : 0;
+    doc[FIELD_ERROR_DEW]    = currentData.dewError;
     // Time sync error detection
     uint8_t timeSyncError = 0;
     if (!timeSynced) {
         timeSyncError = 1;  // NTP not synchronized
     } else if (externalDataValid) {
-        // Check time difference with REW
         uint32_t currentTime = myTZ.now();
         uint32_t timeDiff = abs((int32_t)(currentTime - externalData.timestamp));
-        if (timeDiff > 300) {  // 5 minutes = 300 seconds
-            timeSyncError = 2;  // Time discrepancy >5min
-        }
-        // else timeSyncError = 0;  // All OK
+        if (timeDiff > 300) timeSyncError = 2;  // Time discrepancy >5min
     }
-    // If externalDataValid is false, we can't check discrepancy, so assume OK if NTP is synced
-    doc["etms"] = timeSyncError;   // error time sync (0=OK, 1=NTP unsync, 2=time discrepancy)
+    doc[FIELD_ERROR_TIME_SYNC] = timeSyncError;
 
     // Sensor data
-    doc["tbat"] = currentData.bathroomTemp;      // temperature bathroom
-    doc["hbat"] = currentData.bathroomHumidity;  // humidity bathroom
-    doc["pbat"] = currentData.bathroomPressure;  // pressure bathroom
-    doc["tutl"] = currentData.utilityTemp;       // temperature utility
-    doc["hutl"] = currentData.utilityHumidity;   // humidity utility
-    doc["pwr"] = currentData.currentPower;       // current power
-    doc["eng"] = currentData.energyConsumption;  // energy consumption
-    doc["dlds"] = (int)currentData.livingRoomDutyCycle;  // duty cycle living room (%)
+    doc[FIELD_TEMP_BATHROOM]      = currentData.bathroomTemp;
+    doc[FIELD_HUM_BATHROOM]       = currentData.bathroomHumidity;
+    doc[FIELD_PRESS_BATHROOM]     = currentData.bathroomPressure;
+    doc[FIELD_TEMP_UTILITY]       = currentData.utilityTemp;
+    doc[FIELD_HUM_UTILITY]        = currentData.utilityHumidity;
+    doc[FIELD_CURRENT_POWER]      = currentData.currentPower;
+    doc[FIELD_ENERGY_CONSUMPTION] = currentData.energyConsumption;
+    doc[FIELD_DUTY_CYCLE_LIVING]  = (int)currentData.livingRoomDutyCycle;
 
     String jsonString;
     serializeJson(doc, jsonString);
 
-    // Structured logging for readability
-    LOG_INFO("HTTP", "STATUS_UPDATE FAN: fwc=%d fut=%d fkop=%d fdse=%d", (int)doc["fwc"], (int)doc["fut"], (int)doc["fkop"], (int)doc["fdse"]);
-    LOG_INFO("HTTP", "S_U INPUT: il1=%d il2=%d iul=%d iwc=%d iwr=%d iwb=%d", (int)doc["il1"], (int)doc["il2"], (int)doc["iul"], (int)doc["iwc"], (int)doc["iwr"], (int)doc["iwb"]);
-    LOG_INFO("HTTP", "S_U OFFTIME: twc=%d tut=%d tkop=%d tdse=%d", (int)doc["twc"], (int)doc["tut"], (int)doc["tkop"], (int)doc["tdse"]);
-    LOG_INFO("HTTP", "S_U SENSOR: tbat=%.1f hbat=%.1f pbat=%.1f tutl=%.1f hutl=%.1f", (float)doc["tbat"], (float)doc["hbat"], (float)doc["pbat"], (float)doc["tutl"], (float)doc["hutl"]);
-    LOG_INFO("HTTP", "S_U ERR+EN: ebm=%d esht=%d epwr=%d edew=%d etms=%d pwr=%.1f eng=%.1f dlds=%d", (int)doc["ebm"], (int)doc["esht"], (int)doc["epwr"], (int)doc["edew"], (int)doc["etms"], (float)doc["pwr"], (float)doc["eng"], (int)doc["dlds"]);
+    // Structured logging
+    LOG_INFO("HTTP", "STATUS_UPDATE FAN: fwc=%d fut=%d fkop=%d fdse=%d", (int)doc[FIELD_FAN_WC], (int)doc[FIELD_FAN_UTILITY], (int)doc[FIELD_FAN_BATHROOM], (int)doc[FIELD_FAN_LIVING_EXH]);
+    LOG_INFO("HTTP", "S_U INPUT: il1=%d il2=%d iul=%d iwc=%d iwr=%d iwb=%d", (int)doc[FIELD_INPUT_BATHROOM_L1], (int)doc[FIELD_INPUT_BATHROOM_L2], (int)doc[FIELD_INPUT_UTILITY_L], (int)doc[FIELD_INPUT_WC_L], (int)doc[FIELD_INPUT_WINDOW_ROOF], (int)doc[FIELD_INPUT_WINDOW_BALC]);
+    LOG_INFO("HTTP", "S_U OFFTIME: twc=%d tut=%d tkop=%d tdse=%d", (int)doc[FIELD_TIME_WC], (int)doc[FIELD_TIME_UTILITY], (int)doc[FIELD_TIME_BATHROOM], (int)doc[FIELD_TIME_LIVING_EXH]);
+    LOG_INFO("HTTP", "S_U SENSOR: tbat=%.1f hbat=%.1f pbat=%.1f tutl=%.1f hutl=%.1f", (float)doc[FIELD_TEMP_BATHROOM], (float)doc[FIELD_HUM_BATHROOM], (float)doc[FIELD_PRESS_BATHROOM], (float)doc[FIELD_TEMP_UTILITY], (float)doc[FIELD_HUM_UTILITY]);
+    LOG_INFO("HTTP", "S_U ERR+EN: ebm=%d esht=%d epwr=%d edew=%d etms=%d pwr=%.1f eng=%.1f dlds=%d", (int)doc[FIELD_ERROR_BME280], (int)doc[FIELD_ERROR_SHT41], (int)doc[FIELD_ERROR_POWER], (int)doc[FIELD_ERROR_DEW], (int)doc[FIELD_ERROR_TIME_SYNC], (float)doc[FIELD_CURRENT_POWER], (float)doc[FIELD_ENERGY_CONSUMPTION], (int)doc[FIELD_DUTY_CYCLE_LIVING]);
 
     bool success = sendHttpPostWithRetry("REW", url.c_str(), jsonString, 2, false);
     if (success) {
@@ -190,30 +191,8 @@ bool sendDewUpdate(const char* room) {
 
 // Check and send STATUS_UPDATE to REW when states change or periodically
 void checkAndSendStatusUpdate() {
-    // Calculate current states for comparison (vključuje drying mode 6-8 za UT in KOP)
-    uint8_t currentFanWc = currentData.disableWc ? 9 : (currentData.wcFan ? 1 : 0);
-
-    // Utility: 6=mode1, 7=mode2, 8=mode3 v drying ciklu, 9=disabled, 1=on, 0=off
-    uint8_t currentFanUt;
-    if (currentData.disableUtility) {
-        currentFanUt = 9;
-    } else if (currentData.utilityDryingMode && currentData.utilityCycleMode >= 1 && currentData.utilityCycleMode <= 3) {
-        currentFanUt = 5 + currentData.utilityCycleMode;  // 6, 7, or 8
-    } else {
-        currentFanUt = currentData.utilityFan ? 1 : 0;
-    }
-
-    // Bathroom: 6=mode1, 7=mode2, 8=mode3 v drying ciklu, 9=disabled, 1=on, 0=off
-    uint8_t currentFanKop;
-    if (currentData.disableBathroom) {
-        currentFanKop = 9;
-    } else if (currentData.bathroomDryingMode && currentData.bathroomCycleMode >= 1 && currentData.bathroomCycleMode <= 3) {
-        currentFanKop = 5 + currentData.bathroomCycleMode;  // 6, 7, or 8
-    } else {
-        currentFanKop = currentData.bathroomFan ? 1 : 0;
-    }
-
-    uint8_t currentFanDse = currentData.disableLivingRoom ? 9 : currentData.livingExhaustLevel;
+    // Fan states via shared helper — eliminates code duplication with sendStatusUpdate
+    FanStates fs = computeFanStates();
 
     uint8_t currentInputL1 = currentData.bathroomLight1 ? 1 : 0;
     uint8_t currentInputL2 = currentData.bathroomLight2 ? 1 : 0;
@@ -221,17 +200,22 @@ void checkAndSendStatusUpdate() {
     uint8_t currentInputWc = currentData.wcLight ? 1 : 0;
     uint8_t currentInputWr = currentData.windowSensor1 ? 1 : 0;
     uint8_t currentInputWb = currentData.windowSensor2 ? 1 : 0;
+    // Error flags — kritične napake morajo takoj sprožiti STATUS_UPDATE
+    uint8_t currentErrFlags = currentData.errorFlags & (ERR_BME280 | ERR_SHT41 | ERR_POWER);
+    uint8_t currentDewErr   = currentData.dewError;
 
     // Check if any state changed
     static uint8_t lastFanWc = 255, lastFanUt = 255, lastFanKop = 255, lastFanDse = 255;
     static uint8_t lastInputL1 = 255, lastInputL2 = 255;
     static uint8_t lastInputUl = 255, lastInputWc = 255, lastInputWr = 255, lastInputWb = 255;
+    static uint8_t lastErrFlags = 255, lastDewErr = 255;
 
-    bool changed = (currentFanWc != lastFanWc) || (currentFanUt != lastFanUt) ||
-                   (currentFanKop != lastFanKop) || (currentFanDse != lastFanDse) ||
+    bool changed = (fs.fwc != lastFanWc) || (fs.fut != lastFanUt) ||
+                   (fs.fkop != lastFanKop) || (fs.fdse != lastFanDse) ||
                    (currentInputL1 != lastInputL1) || (currentInputL2 != lastInputL2) ||
                    (currentInputUl != lastInputUl) || (currentInputWc != lastInputWc) ||
-                   (currentInputWr != lastInputWr) || (currentInputWb != lastInputWb);
+                   (currentInputWr != lastInputWr) || (currentInputWb != lastInputWb) ||
+                   (currentErrFlags != lastErrFlags) || (currentDewErr != lastDewErr);
 
     unsigned long now = millis();
     bool timeToSend = (currentData.lastStatusUpdateTime == 0) ||
@@ -275,10 +259,12 @@ void checkAndSendStatusUpdate() {
 
     // Update last states and timestamp only if STATUS_UPDATE successful
     if (success) {
-        lastFanWc = currentFanWc;
-        lastFanUt = currentFanUt;
-        lastFanKop = currentFanKop;
-        lastFanDse = currentFanDse;
+        lastFanWc = fs.fwc;
+        lastFanUt = fs.fut;
+        lastFanKop = fs.fkop;
+        lastFanDse = fs.fdse;
+        lastErrFlags = currentErrFlags;
+        lastDewErr = currentDewErr;
         lastInputL1 = currentInputL1;
         lastInputL2 = currentInputL2;
         lastInputUl = currentInputUl;

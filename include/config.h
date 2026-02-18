@@ -64,7 +64,8 @@ const bool useNVS = true; // true za produkcijo
 #define SD_SCK_PIN 7
 #define BME280_ADDRESS 0x76
 #define SHT41_ADDRESS 0x44
-#define I2C_TIMEOUT_MS 50
+#define I2C_TIMEOUT_MS 100
+#define I2C_CLOCK_SPEED 10000  // 10 kHz za robustno komunikacijo
 #define SENSOR_READ_TIMEOUT_MS 200
 #define LOG_REPEAT_INTERVAL 60000 // Omejitev ponovitev log sporočil (60 sekund)
 #define SENSOR_TEST_INTERVAL 3600 // Interval za preverjanje senzorjev (sekunde)
