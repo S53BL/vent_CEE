@@ -185,10 +185,12 @@ bool sendDewUpdate(const char* room) {
     String jsonString;
     serializeJson(doc, jsonString);
 
-    LOG_DEBUG("HTTP", "DEW_UPDATE to %s: %s", room, jsonString.c_str());
+    // Log JSON separately to avoid truncation when message exceeds 256 chars
+    LOG_DEBUG("HTTP", "DEW_UPDATE to %s, length=%d", room, jsonString.length());
+    LOG_DEBUG("HTTP", "JSON: %s", jsonString.c_str());
+
     return sendHttpPostWithRetry(room, url.c_str(), jsonString);
 }
-
 // Check and send STATUS_UPDATE to REW when states change or periodically
 void checkAndSendStatusUpdate() {
     // Fan states via shared helper — eliminates code duplication with sendStatusUpdate
