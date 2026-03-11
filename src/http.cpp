@@ -9,10 +9,10 @@
 #include "vent.h"
 #include "message_fields.h"
 
-// URLs for different units
-#define REW_URL "http://192.168.2.190"
-#define DEW_UT_URL "http://192.168.2.193"
-#define DEW_KOP_URL "http://192.168.2.194"
+// URLs za enote - gradijo se iz IP defin v config.h
+#define REW_URL     "http://" IP_REW
+#define DEW_UT_URL  "http://" IP_UT_DEW
+#define DEW_KOP_URL "http://" IP_KOP_DEW
 
 // Helper: Compute fan states — shared between sendStatusUpdate and checkAndSendStatusUpdate
 // Eliminates code duplication and keeps both functions in sync
@@ -168,15 +168,15 @@ bool sendDewUpdate(const char* room) {
     }
 
     // Sensor data - both rooms (each DEW unit uses its own fields)
-    doc[FIELD_TEMP_BATHROOM] = currentData.bathroomTemp;      // tbat - KOP_DEW uses this
-    doc[FIELD_HUM_BATHROOM]  = currentData.bathroomHumidity;  // hbat - KOP_DEW uses this
-    doc[FIELD_PRESS_BATHROOM] = currentData.bathroomPressure; // pbat - KOP_DEW uses this
-    doc[FIELD_TEMP_UTILITY]  = currentData.utilityTemp;       // tutl - UT_DEW uses this
-    doc[FIELD_HUM_UTILITY]   = currentData.utilityHumidity;   // hutl - UT_DEW uses this
+    doc[FIELD_TEMP_BATHROOM]  = currentData.bathroomTemp;      // tbat - KOP_DEW uses this
+    doc[FIELD_HUM_BATHROOM]   = currentData.bathroomHumidity;  // hbat - KOP_DEW uses this
+    doc[FIELD_PRESS_BATHROOM] = currentData.bathroomPressure;  // pbat - KOP_DEW uses this
+    doc[FIELD_TEMP_UTILITY]   = currentData.utilityTemp;       // tutl - UT_DEW uses this
+    doc[FIELD_HUM_UTILITY]    = currentData.utilityHumidity;   // hutl - UT_DEW uses this
 
     // Weather icon and season (both DEW units use these)
-    doc[FIELD_WEATHER_ICON] = currentWeatherIcon;             // wi (string)
-    doc[FIELD_SEASON_CODE]  = currentSeasonCode;              // ss
+    doc[FIELD_WEATHER_ICON] = currentWeatherIcon;              // wi (string)
+    doc[FIELD_SEASON_CODE]  = currentSeasonCode;               // ss
 
     // Error flags (both DEW units may use these)
     doc[FIELD_ERROR_BME280] = currentData.errorFlags & ERR_BME280 ? 1 : 0;  // ebm
@@ -185,12 +185,12 @@ bool sendDewUpdate(const char* room) {
     String jsonString;
     serializeJson(doc, jsonString);
 
-    // Log JSON separately to avoid truncation when message exceeds 256 chars
     LOG_DEBUG("HTTP", "DEW_UPDATE to %s, length=%d", room, jsonString.length());
     LOG_DEBUG("HTTP", "JSON: %s", jsonString.c_str());
 
     return sendHttpPostWithRetry(room, url.c_str(), jsonString);
 }
+
 // Check and send STATUS_UPDATE to REW when states change or periodically
 void checkAndSendStatusUpdate() {
     // Fan states via shared helper — eliminates code duplication with sendStatusUpdate
@@ -282,7 +282,6 @@ bool sendLogsToREW() {
     if (logBuffer.length() == 0) return true;
     String url = String(REW_URL) + "/api/logs";
 
-    // Wrap logBuffer in JSON format
     DynamicJsonDocument doc(1024);
     doc[FIELD_LOGS] = logBuffer;
 
@@ -295,7 +294,8 @@ bool sendLogsToREW() {
         logBuffer.clear();
         LOG_INFO("HTTP", "LOGS na REW: %.1f kB uspeh", kb);
     } else {
-        LOG_ERROR("HTTP", "LOGS na REW: neuspeh, ponovno čez 5 min");
+        LOG_WARN("HTTP", "LOGS na REW: neuspeh, buffer zavržen (%d B)", (int)logBuffer.length());
+        logBuffer.clear();
     }
     return success;
 }
@@ -342,9 +342,7 @@ bool sendHttpPostWithRetry(const char* deviceName, const char* url, const String
         // Connection error (0, negative) or server error (500+) - device offline
         if (httpCode <= 0 || httpCode >= 500) {
             if (attempt < maxRetries) {
-                // Delay before retry: 2s
-                int delayMs = 2000;
-                delay(delayMs);
+                delay(2000);
             }
         }
     }
@@ -352,7 +350,7 @@ bool sendHttpPostWithRetry(const char* deviceName, const char* url, const String
     if (logResult) {
         LOG_ERROR("HTTP", "POST to %s - Failed after %d attempts", deviceName, maxRetries);
     }
-    return false; // Mark device as offline
+    return false;
 }
 
 // Check if a device is online by pinging its /api/ping endpoint
@@ -360,7 +358,7 @@ bool checkDeviceOnline(const char* ip) {
     String url = String("http://") + ip + "/api/ping";
     HTTPClient http;
     http.begin(url);
-    http.setTimeout(2000); // 2 second timeout
+    http.setTimeout(2000);
 
     int httpResponseCode = http.GET();
 
@@ -381,21 +379,21 @@ void checkAllDevices() {
     String statusMessage = "Offline test:";
 
     // Check REW
-    bool rewOnline = checkDeviceOnline("192.168.2.190");
+    bool rewOnline = checkDeviceOnline(IP_REW);
     if (rewOnline != rewStatus.isOnline) {
         rewStatus.isOnline = rewOnline;
     }
     statusMessage += String(" REW ") + (rewOnline ? "online" : "offline");
 
     // Check UT_DEW
-    bool utOnline = checkDeviceOnline("192.168.2.193");
+    bool utOnline = checkDeviceOnline(IP_UT_DEW);
     if (utOnline != utDewStatus.isOnline) {
         utDewStatus.isOnline = utOnline;
     }
     statusMessage += String(", UT_DEW ") + (utOnline ? "online" : "offline");
 
     // Check KOP_DEW
-    bool kopOnline = checkDeviceOnline("192.168.2.194");
+    bool kopOnline = checkDeviceOnline(IP_KOP_DEW);
     if (kopOnline != kopDewStatus.isOnline) {
         kopDewStatus.isOnline = kopOnline;
     }

@@ -180,6 +180,11 @@ void controlUtility() {
     }
     utility_hum_history[9] = currentData.utilityHumidity;
 
+    // Hardware lock: stikalo OFF vedno drži disableUtility = true
+    if (!currentData.utilitySwitch) {
+        currentData.disableUtility = true;
+    }
+
     // Če disableUtility, prekini cikel
     if (currentData.disableUtility) {
         if (digitalRead(PIN_UTILITY_ODVOD) == HIGH) {
@@ -412,16 +417,18 @@ void controlUtility() {
         currentData.manualTriggerUtility = false;
     }
 
-    // Handle switch — "zadnji ima besedo": edge-detection za fizično stikalo in REW toggle
+    // Handle switch — stikalo OFF = hardware lock (REW ne more override-ati)
+    // Stikalo OFF → disable (in drži); Stikalo OFF→ON → auto enable
     static bool lastSwitchState = false;
     static bool switchInitialized = false;
     bool currentSwitchState = currentData.utilitySwitch;
     if (!switchInitialized) {
-        lastSwitchState = !currentSwitchState;  // prisili edge detection pri prvem klicu
+        lastSwitchState = !currentSwitchState;
         switchInitialized = true;
     }
     if (currentSwitchState != lastSwitchState) {
         if (!currentSwitchState) {
+            // Stikalo izklopljeno — hardware lock
             currentData.disableUtility = true;
             utility_drying_mode = false;
             utility_cycle_mode = 0;
@@ -432,12 +439,13 @@ void controlUtility() {
                 in_burst = false;
             }
             char logMessage[256];
-            snprintf(logMessage, sizeof(logMessage), "[UT Vent] Disabled via switch");
+            snprintf(logMessage, sizeof(logMessage), "[UT Vent] Disabled via physical switch (hardware lock)");
             logEvent(logMessage);
         } else {
+            // Stikalo vklopljeno — auto enable, REW prevzame kontrolo
             currentData.disableUtility = false;
             char logMessage[256];
-            snprintf(logMessage, sizeof(logMessage), "[UT Vent] Enabled via switch");
+            snprintf(logMessage, sizeof(logMessage), "[UT Vent] Switch ON - auto enabled, REW control active");
             logEvent(logMessage);
         }
     }

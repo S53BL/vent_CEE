@@ -7,6 +7,7 @@
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include <ezTime.h>
+#include <esp_task_wdt.h>
 #include "config.h"
 #include "globals.h"
 #include "logging.h"
@@ -259,9 +260,15 @@ void setup() {
 
     // Initial device status check
     checkAllDevices();
+
+    // Hardware watchdog - reset if loop freezes for WDT_TIMEOUT_SEC seconds
+    esp_task_wdt_init(WDT_TIMEOUT_SEC, true);
+    esp_task_wdt_add(NULL);
+    LOG_INFO("System", "WDT initialized: %ds", WDT_TIMEOUT_SEC);
 }
 
 void loop() {
+    esp_task_wdt_reset();
     uint32_t now = millis();
 
     // Periodic sensor reading
@@ -322,10 +329,17 @@ void loop() {
             LOG_INFO("ETH", "Network reconnected!");
         }
     }
-
+    
+    // Periodic NTP re-sync
+    static unsigned long lastNTPSync = 0;
+    if (timeSynced && (now - lastNTPSync >= NTP_UPDATE_INTERVAL)) {
+    lastNTPSync = now;
+    syncNTP();
+    }
+    
     // Maintain loop timing for consistent execution
     static unsigned long lastLoopTime = 0;
-    const unsigned long LOOP_INTERVAL = 1000; // 1 second
+    const unsigned long LOOP_INTERVAL = 100; // 0,1 second ( bilo 1 sek )
 
     unsigned long currentTime = millis();
     if (currentTime - lastLoopTime < LOOP_INTERVAL) {
