@@ -180,6 +180,39 @@ void controlUtility() {
     }
     utility_hum_history[9] = currentData.utilityHumidity;
 
+    // Switch edge detection — mora biti PRED disable blokom
+    static bool lastSwitchState = false;
+    static bool switchInitialized = false;
+    bool currentSwitchState = currentData.utilitySwitch;
+    if (!switchInitialized) {
+        lastSwitchState = !currentSwitchState;
+        switchInitialized = true;
+    }
+    if (currentSwitchState != lastSwitchState) {
+        if (!currentSwitchState) {
+            // Stikalo izklopljeno — hardware lock
+            currentData.disableUtility = true;
+            utility_drying_mode = false;
+            utility_cycle_mode = 0;
+            utility_burst_count = 0;
+            if (in_burst) {
+                digitalWrite(PIN_UTILITY_ODVOD, LOW);
+                currentData.utilityFan = false;
+                in_burst = false;
+            }
+            char logMessage[256];
+            snprintf(logMessage, sizeof(logMessage), "[UT Vent] Disabled via physical switch (hardware lock)");
+            logEvent(logMessage);
+        } else {
+            // Stikalo vklopljeno — auto enable, REW prevzame kontrolo
+            currentData.disableUtility = false;
+            char logMessage[256];
+            snprintf(logMessage, sizeof(logMessage), "[UT Vent] Switch ON - auto enabled, REW control active");
+            logEvent(logMessage);
+        }
+    }
+    lastSwitchState = currentSwitchState;
+
     // Hardware lock: stikalo OFF vedno drži disableUtility = true
     if (!currentData.utilitySwitch) {
         currentData.disableUtility = true;
@@ -416,40 +449,6 @@ void controlUtility() {
         }
         currentData.manualTriggerUtility = false;
     }
-
-    // Handle switch — stikalo OFF = hardware lock (REW ne more override-ati)
-    // Stikalo OFF → disable (in drži); Stikalo OFF→ON → auto enable
-    static bool lastSwitchState = false;
-    static bool switchInitialized = false;
-    bool currentSwitchState = currentData.utilitySwitch;
-    if (!switchInitialized) {
-        lastSwitchState = !currentSwitchState;
-        switchInitialized = true;
-    }
-    if (currentSwitchState != lastSwitchState) {
-        if (!currentSwitchState) {
-            // Stikalo izklopljeno — hardware lock
-            currentData.disableUtility = true;
-            utility_drying_mode = false;
-            utility_cycle_mode = 0;
-            utility_burst_count = 0;
-            if (in_burst) {
-                digitalWrite(PIN_UTILITY_ODVOD, LOW);
-                currentData.utilityFan = false;
-                in_burst = false;
-            }
-            char logMessage[256];
-            snprintf(logMessage, sizeof(logMessage), "[UT Vent] Disabled via physical switch (hardware lock)");
-            logEvent(logMessage);
-        } else {
-            // Stikalo vklopljeno — auto enable, REW prevzame kontrolo
-            currentData.disableUtility = false;
-            char logMessage[256];
-            snprintf(logMessage, sizeof(logMessage), "[UT Vent] Switch ON - auto enabled, REW control active");
-            logEvent(logMessage);
-        }
-    }
-    lastSwitchState = currentSwitchState;
 
     // Update global status
     currentData.utilityDryingMode = utility_drying_mode;

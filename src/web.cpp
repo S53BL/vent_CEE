@@ -400,7 +400,7 @@ void handleRoot(AsyncWebServerRequest *request) {
     html += "<div class='status-item'><span class='status-label'>Temperatura:</span><span class='status-value' id='ext-temp'>" + String(currentData.externalTemp, 1) + " °C</span></div>";
     html += "<div class='status-item'><span class='status-label'>Vlaga:</span><span class='status-value' id='ext-humidity'>" + String(currentData.externalHumidity, 1) + " %</span></div>";
     html += "<div class='status-item'><span class='status-label'>Tlak:</span><span class='status-value' id='ext-pressure'>" + String(currentData.externalPressure, 1) + " hPa</span></div>";
-    html += "<div class='status-item'><span class='status-label'>Svetloba:</span><span class='status-value' id='ext-light'>" + String(currentData.externalLight, 1) + " lux</span></div>";
+//    html += "<div class='status-item'><span class='status-label'>Svetloba:</span><span class='status-value' id='ext-light'>" + String(currentData.externalLight, 1) + " lux</span></div>";
     html += "<div class='status-item'><span class='status-label'>Ikona:</span><span class='status-value' id='ext-weather-icon'>" + String(currentWeatherIcon) + "</span></div>";
     html += "<div class='status-item'><span class='status-label'>Sezona:</span><span class='status-value' id='ext-season'>" + getSeasonName() + "</span></div>";
     html += "<div class='status-item'><span class='status-label'>DND:</span><span class='status-value' id='ext-dnd'>" + String(isDNDTime() ? "DA" : "NE") + "</span></div>";
@@ -489,7 +489,7 @@ void handleRoot(AsyncWebServerRequest *request) {
                 "document.getElementById('ext-temp').textContent=d.external_temp+' °C';"
                 "document.getElementById('ext-humidity').textContent=d.external_humidity+' %';"
                 "document.getElementById('ext-pressure').textContent=d.external_pressure+' hPa';"
-                "document.getElementById('ext-light').textContent=d.external_light+' lux';"
+//                "document.getElementById('ext-light').textContent=d.external_light+' lux';"
                 "document.getElementById('power-3v3').textContent=d.supply_3v3+' V';"
                 "document.getElementById('power-5v').textContent=d.supply_5v+' V';"
                 "document.getElementById('power-current').textContent=d.current_power+' W';"
@@ -502,7 +502,7 @@ void handleRoot(AsyncWebServerRequest *request) {
                 "document.getElementById('status-sht41').textContent=(d.error_flags&2)?'NAPAKA':'OK';"
                 "document.getElementById('status-power').textContent=(d.error_flags&64)?'NAPAKA':'OK';"
                 "document.getElementById('status-ntp').textContent=d.time_synced?'OK':'NESINHRONIZIRAN';"
-                "document.getElementById('status-time-rew').textContent=(d.external_data_valid&&d.time_synced&&Math.abs(Date.now()/1000-d.external_timestamp)<=300)?'OK':'RAZHAJANJE >5min';"
+                "document.getElementById('status-time-rew').textContent=(d.external_data_valid&&d.time_synced&&Math.abs(d.server_timestamp-d.external_timestamp)<=300)?'OK':'RAZHAJANJE >5min';"
                 "document.getElementById('status-rew').textContent=d.rew_online?'ONLINE':'OFFLINE';"
                 "document.getElementById('status-ut-dew').textContent=d.ut_dew_online?'ONLINE':'OFFLINE';"
                 "document.getElementById('status-kop-dew').textContent=d.kop_dew_online?'ONLINE':'OFFLINE';"
@@ -915,7 +915,7 @@ void handleCurrentDataRequest(AsyncWebServerRequest *request) {
                   String("\"external_temp\":") + String(currentData.externalTemp, 1) + "," +
                   String("\"external_humidity\":") + String(currentData.externalHumidity, 1) + "," +
                   String("\"external_pressure\":") + String(currentData.externalPressure, 1) + "," +
-                  String("\"external_light\":") + String(currentData.externalLight, 1) + "," +
+//                  String("\"external_light\":") + String(currentData.externalLight, 1) + "," +
                   String("\"supply_3v3\":") + String(currentData.supply3V3, 3) + "," +
                   String("\"supply_5v\":") + String(currentData.supply5V, 3) + "," +
                   String("\"current_power\":") + String(currentData.currentPower, 1) + "," +
@@ -929,6 +929,7 @@ void handleCurrentDataRequest(AsyncWebServerRequest *request) {
                   String("\"ut_dew_online\":") + String(utDewStatus.isOnline ? "true" : "false") + "," +
                   String("\"kop_dew_online\":") + String(kopDewStatus.isOnline ? "true" : "false") + "," +
                   String("\"external_timestamp\":") + String(externalData.timestamp) + "," +
+                  String("\"server_timestamp\":") + String((uint32_t)myTZ.now()) + "," +
                   String("\"error_flags\":") + String((int)currentData.errorFlags) +
                   "}";
 
