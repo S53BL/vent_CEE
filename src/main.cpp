@@ -330,11 +330,15 @@ void loop() {
         }
     }
     
-    // Periodic NTP re-sync
-    static unsigned long lastNTPSync = 0;
-    if (timeSynced && (now - lastNTPSync >= NTP_UPDATE_INTERVAL)) {
-    lastNTPSync = now;
-    syncNTP();
+    // Periodic NTP resync - every 1 hour (NTP_UPDATE_INTERVAL)
+    static unsigned long lastNTPSync = millis(); // millis() = preskoči prvi interval (boot že naredi sync)
+    if (ETH.localIP() != IPAddress(0, 0, 0, 0) &&
+        (now - lastNTPSync) >= NTP_UPDATE_INTERVAL) {
+        lastNTPSync = now;
+        LOG_INFO("NTP", "Periodic resync...");
+        if (!syncNTP()) {
+            LOG_WARN("NTP", "Periodic resync failed, timeSynced keeps previous value: %s", timeSynced ? "true" : "false");
+        }
     }
     
     // Maintain loop timing for consistent execution
