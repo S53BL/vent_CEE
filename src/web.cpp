@@ -8,6 +8,7 @@
 #include "help_html.h"
 #include "html.h"
 #include "vent.h"
+#include <Update.h>
 
 // Helper functions for root page
 String formatUptime(unsigned long seconds) {
@@ -317,6 +318,85 @@ const char HTML_SETTINGS[] PROGMEM = R"rawliteral(
 // Opomba: HTML_SETTINGS je razdeljen - nadaljevanje se gradi dinamično v handleSettings()
 // ker moramo vključiti PROGMEM stringe HTML_NAV_CSS in HTML_NAV_BAR
 
+static const char OTA_HTML[] PROGMEM = R"rawliteral(
+<!DOCTYPE html>
+<html lang="sl"><head><meta charset="UTF-8">
+<title>CEE OTA Update</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+*{box-sizing:border-box}
+body{font-family:Arial,sans-serif;background:#101010;color:#e0e0e0;
+     display:flex;flex-direction:column;align-items:center;padding:40px 20px}
+h1{color:#4da6ff;margin-bottom:8px}
+.sub{color:#888;font-size:14px;margin-bottom:30px}
+.card{background:#1a1a1a;border:1px solid #333;border-radius:10px;
+      padding:30px 36px;width:100%;max-width:480px;text-align:center}
+input[type=file]{display:block;width:100%;padding:10px;margin:16px 0 20px;
+  background:#2a2a2a;border:2px dashed #555;border-radius:6px;color:#e0e0e0;cursor:pointer}
+input[type=file]:hover{border-color:#4da6ff}
+.btn{display:inline-block;padding:12px 32px;background:#4da6ff;color:#101010;
+     border:none;border-radius:6px;font-size:16px;font-weight:bold;cursor:pointer;width:100%}
+.btn:hover{background:#6bb3ff}
+.btn:disabled{background:#555;color:#888;cursor:not-allowed}
+#progress{width:100%;background:#2a2a2a;border-radius:4px;height:18px;
+           margin-top:18px;display:none;overflow:hidden}
+#bar{height:100%;background:#4da6ff;width:0;transition:width 0.3s;border-radius:4px}
+#status{margin-top:14px;font-size:14px;color:#4da6ff;min-height:20px}
+.nav{margin-top:28px;font-size:14px}
+.nav a{color:#4da6ff;text-decoration:none}
+</style></head><body>
+<h1>&#11014; OTA Firmware Update</h1>
+<p class="sub">CEE - ventilacijski sistem</p>
+<div class="card">
+  <form id="upForm">
+    <input type="file" id="file" accept=".bin" required>
+    <button class="btn" id="btn" type="submit">Nalozi firmware</button>
+  </form>
+  <div id="progress"><div id="bar"></div></div>
+  <div id="status"></div>
+</div>
+<div class="nav"><a href="/">&#8592; Domača stran</a></div>
+<script>
+document.getElementById('upForm').onsubmit=function(e){
+  e.preventDefault();
+  const f=document.getElementById('file').files[0];
+  if(!f)return;
+  const btn=document.getElementById('btn');
+  const bar=document.getElementById('bar');
+  const prog=document.getElementById('progress');
+  const status=document.getElementById('status');
+  btn.disabled=true;
+  prog.style.display='block';
+  status.textContent='Nalaganje...';
+  const xhr=new XMLHttpRequest();
+  xhr.upload.onprogress=function(e){
+    if(e.lengthComputable){
+      const pct=Math.round(e.loaded/e.total*100);
+      bar.style.width=pct+'%';
+      status.textContent='Nalaganje: '+pct+'%';
+    }
+  };
+  xhr.onload=function(){
+    if(xhr.status===200){
+      bar.style.width='100%';
+      bar.style.background='#44cc44';
+      status.textContent='Uspelo! Naprava se resetira v 5s...';
+      setTimeout(()=>{location.href='/';},5500);
+    }else{
+      bar.style.background='#ff4444';
+      status.textContent='Napaka: '+xhr.responseText;
+      btn.disabled=false;
+    }
+  };
+  xhr.onerror=function(){status.textContent='Napaka pri prenosu!';btn.disabled=false;};
+  const form=new FormData();
+  form.append('update',f);
+  xhr.open('POST','/update');
+  xhr.send(form);
+};
+</script></body></html>
+)rawliteral";
+
 bool settingsUpdatePending = false;
 unsigned long settingsUpdateStartTime = 0;
 bool settingsUpdateSuccess = false;
@@ -566,6 +646,9 @@ void handleSettings(AsyncWebServerRequest *request) {
             "<button class='btn btn-save' onclick='saveSettings()'>Shrani</button>"
             "<button class='btn btn-reset' onclick='resetToDefaults()'>Ponastavi</button>"
             "<button class='btn btn-factory' onclick='resetToFactoryDefaults()'>Tovarniški reset</button>"
+            "<a href='/update' style='padding:9px 20px;background:#e85000;color:#fff;"
+            "border-radius:5px;font-size:14px;font-weight:bold;text-decoration:none;'>"
+            "&#11014; OTA</a>"
         "</div>"
         "<div class='form-container'>"
 
@@ -1137,6 +1220,43 @@ void setupWebServer() {
             request->client()->remoteIP().toString().c_str());
         request->send(404, "text/plain", "Not found");
     });
+
+    // --- GET /update -> OTA HTML ---
+    server.on("/update", HTTP_GET, [](AsyncWebServerRequest *request){
+        request->send_P(200, "text/html; charset=UTF-8", OTA_HTML);
+    });
+
+    // --- POST /update -> OTA flash ---
+    server.on("/update", HTTP_POST,
+        [](AsyncWebServerRequest *request){
+            bool ok = !Update.hasError();
+            String msg = ok ? "OK" : Update.errorString();
+            AsyncWebServerResponse *resp = request->beginResponse(
+                ok ? 200 : 500, "text/plain",
+                ok ? "OK" : ("FAIL: " + msg));
+            resp->addHeader("Connection", "close");
+            request->send(resp);
+            if (ok) { delay(500); ESP.restart(); }
+        },
+        [](AsyncWebServerRequest *request, String filename,
+           size_t index, uint8_t *data, size_t len, bool final){
+            if (!index) {
+                LOG_INFO("OTA", "Start: %s (%u B)",
+                         filename.c_str(), request->contentLength());
+                if (!Update.begin(UPDATE_SIZE_UNKNOWN, U_FLASH))
+                    LOG_ERROR("OTA", "begin failed: %s", Update.errorString());
+            }
+            if (!Update.hasError() && Update.write(data, len) != len)
+                LOG_ERROR("OTA", "write failed");
+            if (final) {
+                if (Update.end(true))
+                    LOG_INFO("OTA", "OK: %u B", index + len);
+                else
+                    LOG_ERROR("OTA", "end failed: %s", Update.errorString());
+            }
+        }
+    );
+    LOG_INFO("Web", "OTA handler registriran na /update");
 
     LOG_INFO("Web", "Začenjam strežnik na portu 80");
     server.begin();
