@@ -57,9 +57,6 @@ const int NTP_BUFFER_SIZE = 48;
 byte packetBuffer[NTP_BUFFER_SIZE];
 
 bool sendNTPpacket(const char* address) {
-    // Initialize NTP UDP
-    ntpUDP.begin(8888); // Local port
-
     // Set all bytes in the buffer to 0
     memset(packetBuffer, 0, NTP_BUFFER_SIZE);
 
@@ -100,6 +97,8 @@ bool syncNTP() {
     LOG_INFO("NTP", "Starting NTP sync with servers");
     const char* additionalServers[] = {"0.europe.pool.ntp.org", "time.cloudflare.com"};
     const int totalServers = NTP_SERVER_COUNT + 2;
+
+    ntpUDP.begin(8888);
 
     for (int i = 0; i < totalServers; i++) {
         const char* server;
@@ -149,6 +148,7 @@ bool syncNTP() {
                     LOG_INFO("NTP", "SUCCESS with %s", server);
                     LOG_INFO("NTP", "Current time: %s", myTZ.dateTime().c_str());
                     timeSynced = true;
+                    ntpUDP.stop();
                     return true;
                 } else {
                     LOG_ERROR("NTP", "FAILED with %s (invalid time: %lu)", server, epoch);
@@ -166,6 +166,7 @@ bool syncNTP() {
     LOG_ERROR("NTP", "All servers failed - time not synchronized");
     LOG_INFO("NTP", "Possible causes: Firewall blocking UDP port 123, DNS issues, or network restrictions");
     timeSynced = false;
+    ntpUDP.stop();
     return false;
 }
 
@@ -341,13 +342,8 @@ void loop() {
         }
     }
     
-    // Maintain loop timing for consistent execution
+    // Non-blocking loop pacing — 1 second minimum interval
     static unsigned long lastLoopTime = 0;
-    const unsigned long LOOP_INTERVAL = 100; // 0,1 second ( bilo 1 sek )
-
-    unsigned long currentTime = millis();
-    if (currentTime - lastLoopTime < LOOP_INTERVAL) {
-        delay(LOOP_INTERVAL - (currentTime - lastLoopTime));
-    }
-    lastLoopTime = millis();
+    if (now - lastLoopTime < 1000UL) return;
+    lastLoopTime = now;
 }

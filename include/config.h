@@ -1,11 +1,11 @@
 // config.h
 
-#define WDT_TIMEOUT_SEC  30   // Hardware watchdog timeout (seconds)
-
 #ifndef CONFIG_H
 #define CONFIG_H
 #include <cstdint>
 #include <Arduino.h>
+
+#define WDT_TIMEOUT_SEC  30   // Hardware watchdog timeout (seconds)
 
 // Ethernet pins for ESP32-S3-ETH (W5500)
 #define ETH_MISO_PIN    12

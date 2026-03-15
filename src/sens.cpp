@@ -310,11 +310,21 @@ void readSensors() {
     if (!utDewStatus.isOnline) currentData.dewError |= 1;
     if (!kopDewStatus.isOnline) currentData.dewError |= 2;
 
-    // Log local sensors only
-    LOG_INFO("Sensors", "UT: T=%.1f°C H=%.1f%% KOP: T=%.1f°C H=%.1f%% P=%.1fhPa 5V=%.3fV 3.3V=%.3fV",
+    // Log local sensors — vedno logiramo temperaturo/vlago, napajanje samo ob spremembi ali napaki
+    LOG_INFO("Sensors", "UT: T=%.1f°C H=%.1f%% KOP: T=%.1f°C H=%.1f%% P=%.1fhPa",
              currentData.utilityTemp, currentData.utilityHumidity,
-             currentData.bathroomTemp, currentData.bathroomHumidity, currentData.bathroomPressure,
-             currentData.supply5V, currentData.supply3V3);
+             currentData.bathroomTemp, currentData.bathroomHumidity, currentData.bathroomPressure);
+
+    static float last5V = 0.0f, last3V3 = 0.0f;
+    bool powerChanged = (fabsf(currentData.supply5V - last5V) > 0.05f) ||
+                        (fabsf(currentData.supply3V3 - last3V3) > 0.05f);
+    if (powerChanged || powerError) {
+        LOG_INFO("Sensors", "Napajanje: 5V=%.3fV 3.3V=%.3fV%s",
+                 currentData.supply5V, currentData.supply3V3,
+                 powerError ? " [NAPAKA]" : "");
+        last5V  = currentData.supply5V;
+        last3V3 = currentData.supply3V3;
+    }
 }
 
 bool checkI2CDevice(uint8_t address) {

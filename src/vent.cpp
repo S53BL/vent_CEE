@@ -306,8 +306,12 @@ void controlUtility() {
     // Določitev duration in off
     float duration_factor = (utility_cycle_mode == 1) ? 1.0 : (utility_cycle_mode == 2) ? 0.6 : 0.3;
     float off_factor = (utility_cycle_mode == 1) ? 1.0 : (utility_cycle_mode == 2) ? 1.5 : 2.0;
-    unsigned long fan_duration = base_fan_duration_UT * duration_factor; // ms // specifično za UT
-    unsigned long fan_off_duration = settings.fanOffDuration * off_factor * 1000; // iz settings
+    unsigned long fan_duration = base_fan_duration_UT * duration_factor; // ms
+    static unsigned long fan_off_duration = 0;
+    // Inicializiraj ob zagonu novega cikla (burst_count == 0 pomeni svež cikel)
+    if (utility_burst_count == 0 && !in_burst) {
+        fan_off_duration = settings.fanOffDuration * off_factor * 1000;
+    }
 
     // Expected end time is calculated once at trigger, just copy to currentData
 
@@ -849,20 +853,39 @@ void controlBathroom() {
     }
 
     if (millis() - lastSensorCheck >= SENSOR_TEST_INTERVAL * 1000) {
-        if (currentData.errorFlags & 0x01) {
-            digitalWrite(PIN_KOPALNICA_ODVOD, LOW);
-            fanActive = false;
-            currentData.bathroomFan = false;
-            currentData.offTimes[0] = 0;
-            snprintf(logMessage, sizeof(logMessage), "[KOP Vent] OFF: Senzor napaka");
-            logEvent(logMessage);
+        if (currentData.errorFlags & ERR_BME280) {
+            // Senzor v napaki — ustavi ventilator in ponastaviti burst stanje
+            if (fanActive || in_burst) {
+                digitalWrite(PIN_KOPALNICA_ODVOD, LOW);
+                fanActive = false;
+                in_burst = false;
+                currentData.bathroomFan = false;
+                currentData.offTimes[0] = 0;
+                snprintf(logMessage, sizeof(logMessage), "[KOP Vent] OFF: Senzor napaka (ERR_BME280)");
+                logEvent(logMessage);
+            }
+            // Ob napaki senzorja prekini tudi drying cikel
+            if (drying_mode) {
+                drying_mode = false;
+                cycle_mode = 0;
+                burst_count = 0;
+                expected_end_timeKOP = 0;
+                currentData.bathroomExpectedEndTime = 0;
+                currentData.bathroomDryingMode = false;
+                currentData.bathroomCycleMode = 0;
+                snprintf(logMessage, sizeof(logMessage), "[KOP Vent] Drying cikel prekinjen: senzor napaka");
+                logEvent(logMessage);
+            }
         } else if (bmePresent && sht41Present && abs(currentData.bathroomTemp - currentData.utilityTemp) > 10.0) {
-            digitalWrite(PIN_KOPALNICA_ODVOD, LOW);
-            fanActive = false;
-            currentData.bathroomFan = false;
-            currentData.offTimes[0] = 0;
-            snprintf(logMessage, sizeof(logMessage), "[KOP Vent] OFF: Temp odstopanje >10°C");
-            logEvent(logMessage);
+            if (fanActive || in_burst) {
+                digitalWrite(PIN_KOPALNICA_ODVOD, LOW);
+                fanActive = false;
+                in_burst = false;
+                currentData.bathroomFan = false;
+                currentData.offTimes[0] = 0;
+                snprintf(logMessage, sizeof(logMessage), "[KOP Vent] OFF: Temp odstopanje >10°C");
+                logEvent(logMessage);
+            }
         }
         lastSensorCheck = millis();
     }
