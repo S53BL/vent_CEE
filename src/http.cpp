@@ -9,6 +9,10 @@
 #include "vent.h"
 #include "message_fields.h"
 
+// Forward declarations
+int sendHttpPostRaw(const char* url, const String& data, int timeoutMs);
+bool sendHttpPostWithRetryRaw(const char* deviceName, const char* url, const String& data, int maxRetries = 3, bool logResult = true);
+
 // URLs za enote - gradijo se iz IP defin v config.h
 #define REW_URL     "http://" IP_REW
 #define DEW_UT_URL  "http://" IP_UT_DEW
@@ -282,22 +286,27 @@ bool sendLogsToREW() {
     if (logBuffer.length() == 0) return true;
     String url = String(REW_URL) + "/api/logs";
 
-    DynamicJsonDocument doc(1024);
-    doc[FIELD_LOGS] = logBuffer;
-
-    String jsonString;
-    serializeJson(doc, jsonString);
-
     float kb = logBuffer.length() / 1024.0;
-    bool success = sendHttpPostWithRetry("REW", url.c_str(), jsonString, 2, false);
+    bool success = sendHttpPostWithRetryRaw("REW", url.c_str(), logBuffer, 2, false);
     if (success) {
-        logBuffer.clear();
         LOG_INFO("HTTP", "LOGS na REW: %.1f kB uspeh", kb);
+        logBuffer.clear();
     } else {
         LOG_WARN("HTTP", "LOGS na REW: neuspeh, buffer zavržen (%d B)", (int)logBuffer.length());
         logBuffer.clear();
     }
     return success;
+}
+
+// Helper function to send HTTP POST with raw text/plain content
+int sendHttpPostRaw(const char* url, const String& data, int timeoutMs) {
+    HTTPClient http;
+    http.begin(url);
+    http.addHeader("Content-Type", "text/plain");
+    http.setTimeout(timeoutMs);
+    int httpResponseCode = http.POST(data);
+    http.end();
+    return httpResponseCode;
 }
 
 // Helper function to send HTTP POST
@@ -311,6 +320,32 @@ int sendHttpPost(const char* url, const String& jsonData, int timeoutMs) {
 
     http.end();
     return httpResponseCode;
+}
+
+// Helper function with retry logic for raw text/plain POST
+bool sendHttpPostWithRetryRaw(const char* deviceName, const char* url, const String& data, int maxRetries, bool logResult) {
+    const int HTTP_TIMEOUT_MS = 10000;
+    int lastHttpCode = 0;
+
+    for (int attempt = 1; attempt <= maxRetries; attempt++) {
+        int httpCode = sendHttpPostRaw(url, data, HTTP_TIMEOUT_MS);
+        lastHttpCode = httpCode;
+
+        if (httpCode >= 200 && httpCode < 300) {
+            if (logResult) LOG_INFO("HTTP", "POST to %s - Response: %d, Success", deviceName, httpCode);
+            return true;
+        }
+        if (httpCode >= 400 && httpCode < 500) {
+            if (logResult) LOG_INFO("HTTP", "POST to %s - Response: %d, Success", deviceName, httpCode);
+            return true;
+        }
+        if (httpCode <= 0 || httpCode >= 500) {
+            if (attempt < maxRetries) delay(2000);
+        }
+    }
+
+    if (logResult) LOG_ERROR("HTTP", "POST to %s - Failed after %d attempts", deviceName, maxRetries);
+    return false;
 }
 
 // Helper function with retry logic
