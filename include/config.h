@@ -125,7 +125,7 @@ const bool NND_DAYS[7] = {true, true, true, true, true, false, false};
 #define SERIAL_BAUD 115200
 #define SENSOR_READ_INTERVAL 60
 #define DATA_SAVE_INTERVAL 360
-#define LOG_THRESHOLD_IDLE 10240  // 10kB - flush logs when idle
+#define LOG_THRESHOLD_IDLE 7168  // 7kB - flush logs when idle
 #define LOG_BUFFER_MAX 30720      // 30kB - force flush regardless of idle status
 
 // Privzete vrednosti za struct so odstranjene - glej initDefaults() v globals.cpp

@@ -10,7 +10,7 @@
 #include "message_fields.h"
 
 // Forward declarations
-int sendHttpPostRaw(const char* url, const String& data, int timeoutMs);
+int sendHttpPostRaw(const char* url, const String& data, int timeoutMs, String* responseBody = nullptr);
 bool sendHttpPostWithRetryRaw(const char* deviceName, const char* url, const String& data, int maxRetries = 3, bool logResult = true);
 
 // URLs za enote - gradijo se iz IP defin v config.h
@@ -263,48 +263,60 @@ void checkAndSendStatusUpdate() {
         }
     }
 
-    // Update last states and timestamp only if STATUS_UPDATE successful
-    if (success) {
-        lastFanWc = fs.fwc;
-        lastFanUt = fs.fut;
-        lastFanKop = fs.fkop;
-        lastFanDse = fs.fdse;
-        lastErrFlags = currentErrFlags;
-        lastDewErr = currentDewErr;
-        lastInputL1 = currentInputL1;
-        lastInputL2 = currentInputL2;
-        lastInputUl = currentInputUl;
-        lastInputWc = currentInputWc;
-        lastInputWr = currentInputWr;
-        lastInputWb = currentInputWb;
-        currentData.lastStatusUpdateTime = now;
-    }
+    // Posodobi tracking stanja in timestamp vedno - ne glede na status posameznih enot
+    lastFanWc = fs.fwc;
+    lastFanUt = fs.fut;
+    lastFanKop = fs.fkop;
+    lastFanDse = fs.fdse;
+    lastErrFlags = currentErrFlags;
+    lastDewErr = currentDewErr;
+    lastInputL1 = currentInputL1;
+    lastInputL2 = currentInputL2;
+    lastInputUl = currentInputUl;
+    lastInputWc = currentInputWc;
+    lastInputWr = currentInputWr;
+    lastInputWb = currentInputWb;
+    currentData.lastStatusUpdateTime = now;
 }
 
 // Send logs to REW
 bool sendLogsToREW() {
     if (logBuffer.length() == 0) return true;
     String url = String(REW_URL) + "/api/logs";
-
     float kb = logBuffer.length() / 1024.0;
-    bool success = sendHttpPostWithRetryRaw("REW", url.c_str(), logBuffer, 2, false);
-    if (success) {
-        LOG_INFO("HTTP", "LOGS na REW: %.1f kB uspeh", kb);
+
+    // Dynamic timeout: 10s base + 50ms per KB (max 60s)
+    int timeout = 10000 + (logBuffer.length() / 1024) * 50;
+    timeout = min(timeout, 60000);  // Cap at 60s for safety
+
+    LOG_INFO("HTTP", "LOGS→REW: pošiljam %.1f kB (timeout=%d ms)...", kb, timeout);
+
+    String responseBody;
+    int httpCode = sendHttpPostRaw(url.c_str(), logBuffer, timeout, &responseBody);
+
+    if (httpCode >= 200 && httpCode < 300) {
+        LOG_INFO("HTTP", "LOGS→REW: uspeh HTTP %d, %.1f kB poslano", httpCode, kb);
         logBuffer.clear();
-    } else {
-        LOG_WARN("HTTP", "LOGS na REW: neuspeh, buffer zavržen (%d B)", (int)logBuffer.length());
-        logBuffer.clear();
+        return true;
     }
-    return success;
+
+    // Vse napake (4xx, 5xx, 0, negativno) — buffer ohrani, poskusi naslednjič
+    LOG_WARN("HTTP", "LOGS→REW: neuspeh HTTP %d (%.80s) — buffer %.1f kB ohranjen, ponovim naslednjič",
+             httpCode, responseBody.c_str(), kb);
+    return false;
 }
 
 // Helper function to send HTTP POST with raw text/plain content
-int sendHttpPostRaw(const char* url, const String& data, int timeoutMs) {
+int sendHttpPostRaw(const char* url, const String& data, int timeoutMs, String* responseBody) {
     HTTPClient http;
     http.begin(url);
     http.addHeader("Content-Type", "text/plain");
+    // Note: Content-Length is automatically added by HTTPClient.POST()
     http.setTimeout(timeoutMs);
     int httpResponseCode = http.POST(data);
+    if (responseBody != nullptr) {
+        *responseBody = http.getString();
+    }
     http.end();
     return httpResponseCode;
 }

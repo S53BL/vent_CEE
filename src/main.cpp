@@ -312,7 +312,6 @@ void loop() {
     const unsigned long DEVICE_CHECK_INTERVAL = 300000; // 5 minutes
     if (now - lastDeviceCheck > DEVICE_CHECK_INTERVAL) {
         lastDeviceCheck = now;
-        LOG_DEBUG("System", "Log buffer size: %d bytes", logBuffer.length());
         flushLogBuffer();
         checkAllDevices();
     }

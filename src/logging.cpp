@@ -56,10 +56,82 @@ void initLogging(void) {
 }
 
 void flushLogBuffer(void) {
-    if (!loggingInitialized || logBuffer.length() == 0) return;
+    if (!loggingInitialized) return;
+
     size_t len = logBuffer.length();
-    if ((len >= LOG_THRESHOLD_IDLE && isIdle()) || len >= LOG_BUFFER_MAX) {
-        sendLogsToREW();
+    float pct = (len * 100.0f) / LOG_THRESHOLD_IDLE;
+
+    // Static tracking za zaporedne neuspehe
+    static int consecutiveFailures = 0;
+    static unsigned long lastFailureTime = 0;
+
+    if (len == 0) {
+        LOG_DEBUG("LOG", "buffer: prazen");
+        lastLogFlush = millis();
+        return;
+    }
+
+    // Dosežen MAX — pošlji v vsakem primeru (OOM zaščita že implementirana)
+    if (len >= LOG_BUFFER_MAX) {
+        float pctMax = (len * 100.0f) / LOG_BUFFER_MAX;
+        LOG_WARN("LOG", "buffer MAX: %d B (%.0f%%) — pošiljam v vsakem primeru", (int)len, pctMax);
+        bool success = sendLogsToREW();
+        if (success) {
+            consecutiveFailures = 0;  // Reset counter
+        } else {
+            consecutiveFailures++;
+            lastFailureTime = millis();
+            LOG_ERROR("LOG", "buffer MAX: pošiljanje neuspešno (fail #%d) — buffer izbrisan (OOM zaščita)", consecutiveFailures);
+            logBuffer.clear();
+        }
+        lastLogFlush = millis();
+        return;
+    }
+
+    // Dosežen prag — pošlji samo če idle
+    if (len >= LOG_THRESHOLD_IDLE) {
+        if (isIdle()) {
+            LOG_INFO("LOG", "buffer: %d B (%.0f%%) idle=DA — pošiljam", (int)len, pct);
+            bool success = sendLogsToREW();
+            
+            // Track success/failure
+            if (success) {
+                if (consecutiveFailures > 0) {
+                    LOG_INFO("LOG", "Recovery: logs successfully sent after %d failures", consecutiveFailures);
+                }
+                consecutiveFailures = 0;
+            } else {
+                consecutiveFailures++;
+                lastFailureTime = millis();
+                LOG_WARN("HTTP", "Log send failed (fail #%d) - buffer %.1f kB retained, will retry", 
+                         consecutiveFailures, len / 1024.0);
+                
+                // Če dolgotrajno failajo (5+), zmanjšaj agresivnost log-anja
+                if (consecutiveFailures >= 5) {
+                    LOG_ERROR("HTTP", "Persistent log failures (%d consecutive) - REW connectivity issue?", 
+                              consecutiveFailures);
+                }
+            }
+        } else {
+            LOG_INFO("LOG", "buffer: %d B (%.0f%%) idle=NE (wc=%d bat=%d ut=%d luc=%d/%d/%d/%d) — čakam",
+                     (int)len, pct,
+                     currentData.wcFan ? 1 : 0,
+                     currentData.bathroomFan ? 1 : 0,
+                     currentData.utilityFan ? 1 : 0,
+                     currentData.wcLight ? 1 : 0,
+                     currentData.bathroomLight1 ? 1 : 0,
+                     currentData.bathroomLight2 ? 1 : 0,
+                     currentData.utilityLight ? 1 : 0);
+        }
+        lastLogFlush = millis();
+        return;
+    }
+
+    // Pod pragom — status z info o consecutive failures če obstajajo
+    if (consecutiveFailures > 0) {
+        LOG_INFO("LOG", "buffer: %d B (%.0f%%) - %d consecutive failures", (int)len, pct, consecutiveFailures);
+    } else {
+        LOG_INFO("LOG", "buffer: %d B (%.0f%%)", (int)len, pct);
     }
     lastLogFlush = millis();
 }
