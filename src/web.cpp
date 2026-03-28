@@ -1159,11 +1159,93 @@ void handleSettingsStatus(AsyncWebServerRequest *request) {
     request->send(200, "application/json", response);
 }
 
+// Handle logs page - displays RAM log buffer
+void handleLogs(AsyncWebServerRequest *request) {
+    if (!request->hasHeader("X-Requested-With") ||
+        request->getHeader("X-Requested-With")->value() != "XMLHttpRequest") {
+        LOG_DEBUG("Web", "Zahtevek: GET /logs");
+    }
+
+    String html = F("<!DOCTYPE HTML><html><head>"
+        "<meta charset='UTF-8'>"
+        "<title>CEE - Logi</title>"
+        "<style>");
+    html += FPSTR(HTML_NAV_CSS);
+    html += F(".log-box{background:#0a0a0a;border:1px solid #333;border-radius:4px;"
+        "padding:12px;font-family:monospace;font-size:12px;"
+        "max-height:70vh;overflow-y:auto;white-space:pre-wrap;word-break:break-all;}"
+        ".log-INFO{color:#66bb6a}.log-WARN{color:#ffa726}"
+        ".log-ERROR{color:#ef5350}.log-DEBUG{color:#617edb}"
+        ".dim{color:#555}"
+        "</style>"
+        "<script>"
+        "function autoRefresh(){"
+            "var cb=document.getElementById('ar');"
+            "if(cb&&cb.checked)setTimeout(function(){location.reload();},10000);"
+        "}"
+        "window.onload=autoRefresh;"
+        "</script>"
+        "</head><body>");
+    html += FPSTR(HTML_NAV_BAR);
+    html += F("<div class='wrap'>"
+        "<h1 style='margin:16px 0;'>CEE — RAM Logi</h1>"
+        "<p style='color:#666;font-size:13px;margin-bottom:12px'>"
+        "RAM buffer (zadnje log vrstice). "
+        "<label><input id='ar' type='checkbox' onchange='autoRefresh()'> "
+        "Auto-refresh 10s</label>"
+        "</p>"
+        "<div class='log-box'>");
+
+    if (logBuffer.isEmpty()) {
+        html += F("<span class='dim'>Log buffer je prazen.</span>");
+    } else {
+        // Parse log buffer line by line and apply color coding
+        int start = 0;
+        while (start < (int)logBuffer.length()) {
+            int end = logBuffer.indexOf('\n', start);
+            if (end < 0) end = logBuffer.length();
+            String line = logBuffer.substring(start, end);
+            start = end + 1;
+
+            // Determine CSS class based on log level
+            String cssClass = "";
+            if (line.indexOf(":INFO]") >= 0) cssClass = "log-INFO";
+            else if (line.indexOf(":WARN]") >= 0) cssClass = "log-WARN";
+            else if (line.indexOf(":ERROR]") >= 0) cssClass = "log-ERROR";
+            else if (line.indexOf(":DEBUG]") >= 0) cssClass = "log-DEBUG";
+
+            // Escape HTML entities
+            line.replace("&", "&");
+            line.replace("<", "<");
+            line.replace(">", ">");
+
+            if (cssClass.length() > 0)
+                html += "<span class='" + cssClass + "'>" + line + "\n</span>";
+            else
+                html += line + "\n";
+        }
+    }
+
+    html += F("</div>"
+        "<p style='color:#555;font-size:12px;margin-top:10px'>"
+        "Buffer velikost: ");
+    html += String(logBuffer.length());
+    html += F(" B / Prag: ");
+    html += String(LOG_THRESHOLD_IDLE);
+    html += F(" B / Maksimum: ");
+    html += String(LOG_BUFFER_MAX);
+    html += F(" B</p>"
+        "</div></body></html>");
+
+    request->send(200, "text/html; charset=utf-8", html);
+}
+
 void setupWebServer() {
     LOG_INFO("Web", "Inicializacija web UI strežnika");
 
     server.on("/", HTTP_GET, handleRoot);
     server.on("/settings", HTTP_GET, handleSettings);
+    server.on("/logs", HTTP_GET, handleLogs);
     server.on("/help", HTTP_GET, handleHelp);
     server.on("/data", HTTP_GET, handleDataRequest);
     server.on("/current-data", HTTP_GET, handleCurrentDataRequest);

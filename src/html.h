@@ -53,6 +53,7 @@ const char HTML_NAV_BAR[] PROGMEM =
         "<a href='/' class='nav-home' title='CEE domača stran'>&#127968;</a>"
         "<a href='/' class='nav-btn'>Domača</a>"
         "<a href='/settings' class='nav-btn'>Nastavitve</a>"
+        "<a href='/logs' class='nav-btn'>Logi</a>"
         "<a href='/help' class='nav-btn'>Pomoč</a>"
         "<span class='nav-sep'></span>"
         "<a href='http://" IP_REW "/' class='nav-ext'>REW</a>"
