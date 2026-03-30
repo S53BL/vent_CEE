@@ -285,14 +285,29 @@ bool sendLogsToREW() {
     String url = String(REW_URL) + "/api/logs";
     float kb = logBuffer.length() / 1024.0;
 
+    // ✅ Zapakira loge v JSON format z "logs" poljem
+    // REW body handler dela samo za JSON, ne za text/plain
+    DynamicJsonDocument doc(logBuffer.length() + 200);
+    doc["logs"] = logBuffer;
+    
+    String jsonString;
+    serializeJson(doc, jsonString);
+    float jsonKb = jsonString.length() / 1024.0;
+
     // Dynamic timeout: 10s base + 50ms per KB (max 60s)
-    int timeout = 10000 + (logBuffer.length() / 1024) * 50;
+    int timeout = 10000 + (jsonString.length() / 1024) * 50;
     timeout = min(timeout, 60000);  // Cap at 60s for safety
 
-    LOG_INFO("HTTP", "LOGS→REW: pošiljam %.1f kB (timeout=%d ms)...", kb, timeout);
+    LOG_INFO("HTTP", "LOGS→REW: pošiljam %.1f kB (JSON %.1f kB, timeout=%d ms)...", kb, jsonKb, timeout);
 
-    String responseBody;
-    int httpCode = sendHttpPostRaw(url.c_str(), logBuffer, timeout, &responseBody);
+    // ✅ Pošlji kot application/json (ne več text/plain)
+    HTTPClient http;
+    http.begin(url.c_str());
+    http.addHeader("Content-Type", "application/json");
+    http.setTimeout(timeout);
+    int httpCode = http.POST(jsonString);
+    String responseBody = http.getString();
+    http.end();
 
     if (httpCode >= 200 && httpCode < 300) {
         LOG_INFO("HTTP", "LOGS→REW: uspeh HTTP %d, %.1f kB poslano", httpCode, kb);
