@@ -109,17 +109,58 @@ bool sendStatusUpdate() {
     String jsonString;
     serializeJson(doc, jsonString);
 
-    // Structured logging
-    LOG_INFO("HTTP", "STATUS_UPDATE FAN: fwc=%d fut=%d fkop=%d fdse=%d", (int)doc[FIELD_FAN_WC], (int)doc[FIELD_FAN_UTILITY], (int)doc[FIELD_FAN_BATHROOM], (int)doc[FIELD_FAN_LIVING_EXH]);
-    LOG_INFO("HTTP", "S_U INPUT: il1=%d il2=%d iul=%d iwc=%d iwr=%d iwb=%d", (int)doc[FIELD_INPUT_BATHROOM_L1], (int)doc[FIELD_INPUT_BATHROOM_L2], (int)doc[FIELD_INPUT_UTILITY_L], (int)doc[FIELD_INPUT_WC_L], (int)doc[FIELD_INPUT_WINDOW_ROOF], (int)doc[FIELD_INPUT_WINDOW_BALC]);
-    LOG_INFO("HTTP", "S_U OFFTIME: twc=%d tut=%d tkop=%d tdse=%d", (int)doc[FIELD_TIME_WC], (int)doc[FIELD_TIME_UTILITY], (int)doc[FIELD_TIME_BATHROOM], (int)doc[FIELD_TIME_LIVING_EXH]);
-    LOG_INFO("HTTP", "S_U SENSOR: tbat=%.1f hbat=%.1f pbat=%.1f tutl=%.1f hutl=%.1f", (float)doc[FIELD_TEMP_BATHROOM], (float)doc[FIELD_HUM_BATHROOM], (float)doc[FIELD_PRESS_BATHROOM], (float)doc[FIELD_TEMP_UTILITY], (float)doc[FIELD_HUM_UTILITY]);
-    LOG_INFO("HTTP", "S_U ERR+EN: ebm=%d esht=%d epwr=%d edew=%d etms=%d pwr=%.1f eng=%.1f dlds=%d", (int)doc[FIELD_ERROR_BME280], (int)doc[FIELD_ERROR_SHT41], (int)doc[FIELD_ERROR_POWER], (int)doc[FIELD_ERROR_DEW], (int)doc[FIELD_ERROR_TIME_SYNC], (float)doc[FIELD_CURRENT_POWER], (float)doc[FIELD_ENERGY_CONSUMPTION], (int)doc[FIELD_DUTY_CYCLE_LIVING]);
+    // Delta logging - logiraj samo ob spremembah
+    static uint8_t prev_fwc  = 0xFF;  // 0xFF = neinicializirano
+    static uint8_t prev_fut  = 0xFF;
+    static uint8_t prev_fkop = 0xFF;
+    static uint8_t prev_fdse = 0xFF;
+    static float   prev_pwr  = -1.0f;
+    static uint8_t prev_err  = 0xFF;
+
+    // Uporabi že obstoječo fs spremenljivko (deklarirana v vrstici 57)
+    float pwr = (float)doc[FIELD_CURRENT_POWER];
+    
+    // Kombinirani error flags
+    uint8_t err_combined = ((int)doc[FIELD_ERROR_BME280]) | 
+                           (((int)doc[FIELD_ERROR_SHT41]) << 1) | 
+                           (((int)doc[FIELD_ERROR_POWER]) << 2) | 
+                           (((int)doc[FIELD_ERROR_DEW]) << 3) | 
+                           (((int)doc[FIELD_ERROR_TIME_SYNC]) << 4);
+
+    bool changed = (fs.fwc  != prev_fwc)  ||
+                   (fs.fut  != prev_fut)  ||
+                   (fs.fkop != prev_fkop) ||
+                   (fs.fdse != prev_fdse) ||
+                   (pwr     != prev_pwr)  ||
+                   (err_combined != prev_err);
+
+    if (changed) {
+        uint32_t twc  = (uint32_t)doc[FIELD_TIME_WC];
+        uint32_t tut  = (uint32_t)doc[FIELD_TIME_UTILITY];
+        uint32_t tkop = (uint32_t)doc[FIELD_TIME_BATHROOM];
+        uint32_t tdse = (uint32_t)doc[FIELD_TIME_LIVING_EXH];
+        
+        // Logiraj z offtime samo če vsaj eden != 0
+        if (twc != 0 || tut != 0 || tkop != 0 || tdse != 0) {
+            LOG_INFO("HTTP", "STATUS_UPDATE: fwc=%d fut=%d fkop=%d fdse=%d | pwr=%.0fW eng=%.1f err=%02X | offtime: wc=%u ut=%u kop=%u dse=%u",
+                     fs.fwc, fs.fut, fs.fkop, fs.fdse, pwr, (float)doc[FIELD_ENERGY_CONSUMPTION], err_combined,
+                     twc, tut, tkop, tdse);
+        } else {
+            LOG_INFO("HTTP", "STATUS_UPDATE: fwc=%d fut=%d fkop=%d fdse=%d | pwr=%.0fW eng=%.1f err=%02X",
+                     fs.fwc, fs.fut, fs.fkop, fs.fdse, pwr, (float)doc[FIELD_ENERGY_CONSUMPTION], err_combined);
+        }
+        
+        // Posodobi prejšnje vrednosti
+        prev_fwc  = fs.fwc;
+        prev_fut  = fs.fut;
+        prev_fkop = fs.fkop;
+        prev_fdse = fs.fdse;
+        prev_pwr  = pwr;
+        prev_err  = err_combined;
+    }
 
     bool success = sendHttpPostWithRetry("REW", url.c_str(), jsonString, 2, false);
-    if (success) {
-        LOG_INFO("HTTP", "STATUS_UPDATE na REW: uspeh");
-    }
+    // Ob uspehu ne logiramo, ob napaki že logira sendHttpPostWithRetry
     return success;
 }
 
@@ -434,6 +475,30 @@ bool checkDeviceOnline(const char* ip) {
 
     http.end();
     return false;
+}
+
+// Check and reset energy consumption monthly
+void checkAndResetMonthlyEnergy() {
+    if (!timeSynced) return;  // Samo če je NTP sinhroniziran
+    
+    time_t now_t = myTZ.now();
+    struct tm *timeinfo = localtime(&now_t);
+    uint8_t currentMonth = timeinfo->tm_mon + 1;  // 1-12
+    uint16_t currentYear = timeinfo->tm_year + 1900;
+    
+    // Preveri prvi zagon ali prehod v nov mesec
+    if (currentData.lastResetMonth == 0 || 
+        currentData.lastResetMonth != currentMonth || 
+        currentData.lastResetYear != currentYear) {
+        
+        float previousConsumption = currentData.energyConsumption;
+        currentData.energyConsumption = 0.0f;
+        currentData.lastResetMonth = currentMonth;
+        currentData.lastResetYear = currentYear;
+        
+        LOG_INFO("Energy", "Mesečni reset: Prejšnja poraba: %.1f Wh (%.2f kWh), Novi mesec: %d/%d", 
+                 previousConsumption, previousConsumption / 1000.0f, currentMonth, currentYear);
+    }
 }
 
 // Check all devices that are currently offline

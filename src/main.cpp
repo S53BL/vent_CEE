@@ -316,6 +316,14 @@ void loop() {
         checkAllDevices();
     }
 
+    // Periodic monthly energy reset check - every 10 minutes
+    static unsigned long lastMonthlyCheck = 0;
+    const unsigned long MONTHLY_CHECK_INTERVAL = 600000; // 10 minut
+    if (now - lastMonthlyCheck > MONTHLY_CHECK_INTERVAL) {
+        lastMonthlyCheck = now;
+        checkAndResetMonthlyEnergy();
+    }
+
     // Periodic network retry - every 5 minutes if no network
     static unsigned long lastNetworkRetry = 0;
     const unsigned long NETWORK_RETRY_INTERVAL = 300000; // 5 minutes

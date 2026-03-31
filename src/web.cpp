@@ -1161,10 +1161,7 @@ void handleSettingsStatus(AsyncWebServerRequest *request) {
 
 // Handle logs page - displays RAM log buffer
 void handleLogs(AsyncWebServerRequest *request) {
-    if (!request->hasHeader("X-Requested-With") ||
-        request->getHeader("X-Requested-With")->value() != "XMLHttpRequest") {
-        LOG_DEBUG("Web", "Zahtevek: GET /logs");
-    }
+    // Ne logiramo GET /logs zahtevkov - polling zahteve brez operativne vrednosti
 
     String html = F("<!DOCTYPE HTML><html><head>"
         "<meta charset='UTF-8'>"

@@ -88,6 +88,8 @@ void initCurrentData() {
   currentData.utilityHumidity = 0.0f;
   currentData.currentPower = 0.0f;
   currentData.energyConsumption = 0.0f;
+  currentData.lastResetMonth = 0;  // 0 = neinicializiran, se bo nastavil ob prvem preverjanju
+  currentData.lastResetYear = 0;
   currentData.livingRoomDutyCycle = 0.0f;
   currentData.livingExhaustLevel = 0;
   currentData.bathroomFan = false;
