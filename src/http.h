@@ -18,6 +18,6 @@ void checkAndResetMonthlyEnergy();
 
 // Helper functions
 int sendHttpPost(const char* url, const String& jsonData, int timeoutMs = 5000);
-bool sendHttpPostWithRetry(const char* deviceName, const char* url, const String& jsonData, int maxRetries = 2, bool logResult = true);
+bool sendHttpPostWithRetry(const char* deviceName, const char* url, const String& jsonData, int maxRetries = 2, bool logResult = true, int* outHttpCode = nullptr);
 
 #endif // HTTP_H

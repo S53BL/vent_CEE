@@ -159,7 +159,7 @@ bool sendStatusUpdate() {
         prev_err  = err_combined;
     }
 
-    bool success = sendHttpPostWithRetry("REW", url.c_str(), jsonString, 2, false);
+    bool success = sendHttpPostWithRetry("REW", url.c_str(), jsonString, 2, false, nullptr);
     // Ob uspehu ne logiramo, ob napaki že logira sendHttpPostWithRetry
     return success;
 }
@@ -230,10 +230,18 @@ bool sendDewUpdate(const char* room) {
     String jsonString;
     serializeJson(doc, jsonString);
 
-    LOG_DEBUG("HTTP", "DEW_UPDATE to %s, length=%d", room, jsonString.length());
-    LOG_DEBUG("HTTP", "JSON: %s", jsonString.c_str());
-
-    return sendHttpPostWithRetry(room, url.c_str(), jsonString);
+    // Konsolidirano logiranje z HTTP kodo in JSON payloadom
+    int httpCode = 0;
+    bool success = sendHttpPostWithRetry(room, url.c_str(), jsonString, 3, false, &httpCode);
+    
+    // Vedno logiraj rezultat - uspeh ali napaka
+    if (success) {
+        LOG_INFO("HTTP", "DEW_UPDATE→%s: HTTP %d | %s", room, httpCode, jsonString.c_str());
+    } else {
+        LOG_ERROR("HTTP", "DEW_UPDATE→%s: HTTP %d FAILED | %s", room, httpCode, jsonString.c_str());
+    }
+    
+    return success;
 }
 
 // Check and send STATUS_UPDATE to REW when states change or periodically
@@ -417,7 +425,7 @@ bool sendHttpPostWithRetryRaw(const char* deviceName, const char* url, const Str
 }
 
 // Helper function with retry logic
-bool sendHttpPostWithRetry(const char* deviceName, const char* url, const String& jsonData, int maxRetries, bool logResult) {
+bool sendHttpPostWithRetry(const char* deviceName, const char* url, const String& jsonData, int maxRetries, bool logResult, int* outHttpCode) {
     const int HTTP_TIMEOUT_MS = 10000; // 10 second timeout
     int lastHttpCode = 0;
 
@@ -430,6 +438,7 @@ bool sendHttpPostWithRetry(const char* deviceName, const char* url, const String
             if (logResult) {
                 LOG_INFO("HTTP", "POST to %s - Response: %d, Success", deviceName, httpCode);
             }
+            if (outHttpCode) *outHttpCode = httpCode;
             return true;
         }
 
@@ -439,6 +448,7 @@ bool sendHttpPostWithRetry(const char* deviceName, const char* url, const String
             if (logResult) {
                 LOG_INFO("HTTP", "POST to %s - Response: %d, Success", deviceName, httpCode);
             }
+            if (outHttpCode) *outHttpCode = httpCode;
             return true; // Don't mark offline, message was processed
         }
 
@@ -453,6 +463,7 @@ bool sendHttpPostWithRetry(const char* deviceName, const char* url, const String
     if (logResult) {
         LOG_ERROR("HTTP", "POST to %s - Failed after %d attempts", deviceName, maxRetries);
     }
+    if (outHttpCode) *outHttpCode = lastHttpCode;
     return false;
 }
 
